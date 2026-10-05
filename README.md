@@ -31,7 +31,7 @@ You can re-run the script whenever you like, for example after editing `requirem
 git clone git@github.com:isaac-pm/lj-cluster-melting.git
 cd lj-cluster-melting
 bash setup_env.sh
-conda activate lj-melt      # or: source ~/miniconda3/etc/profile.d/conda.sh && conda activate lj-melt
+conda activate lj-melt # or: source ~/miniconda3/etc/profile.d/conda.sh && conda activate lj-melt
 python main.py
 ```
 
@@ -69,7 +69,7 @@ Prebuilt wheels (such as `cupy-cuda12x`) install fine from a login node. A packa
 
 ```bash
 salloc -p gpu -q normal -N 1 -n 1 -c 7 -G 1 -t 01:00:00
-bash setup_env.sh --gpu     # loads system/CUDA/12.6.0 automatically
+bash setup_env.sh --gpu # loads system/CUDA/12.6.0 automatically
 ```
 
 ### Submitting `main.py`
