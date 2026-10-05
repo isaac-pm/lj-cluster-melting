@@ -1,0 +1,6 @@
+# Extra packages for GPU runs (Iris GPU nodes or a local NVIDIA GPU).
+# Installed only by `setup_env.sh --gpu`.
+# Iris has CUDA 12.6 and newer local drivers also run CUDA 12 code, so CUDA 12
+# wheels work everywhere. The [ctk] extra ships the CUDA libraries as pip
+# wheels, so no system toolkit is needed, e.g.:
+# cupy-cuda12x[ctk]
