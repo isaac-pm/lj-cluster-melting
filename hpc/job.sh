@@ -51,6 +51,7 @@ echo "job      : ${SLURM_JOB_NAME:-local} ${SLURM_JOB_ID:-}"
 echo "node     : $(hostname) (partition ${SLURM_JOB_PARTITION:-n/a})"
 echo "cpus     : $NCPUS  (OMP_NUM_THREADS=$OMP_NUM_THREADS)"
 echo "gpus     : ${GPUS:-none}"
+echo "mpi      : $([[ ${LJ_MPI:-0} == 1 ]] && echo "mpiexec -n ${LJ_NTASKS:-${SLURM_NTASKS:-$NCPUS}}" || echo none)"
 echo "python   : $(command -v python)"
 echo "args     : $*"
 echo "started  : $(date -Is)"
@@ -58,7 +59,17 @@ if [[ -n $GPUS ]] && command -v nvidia-smi >/dev/null; then nvidia-smi -L; fi
 echo
 
 status=0
-python main.py "$@" || status=$?
+# MPI runs: set LJ_MPI=1 (or use the `mpi` profile in hpc/submit.sh) to
+# launch with mpiexec. LJ_NTASKS defaults to the allocated cores; ranks
+# run an energy scan in parallel, rank 0 merges the results.
+if [[ ${LJ_MPI:-0} == 1 ]]; then
+    # One rank per allocated task; SLURM_NTASKS is the task count of the job.
+    LJ_NTASKS=${LJ_NTASKS:-${SLURM_NTASKS:-$NCPUS}}
+    RUN=(mpiexec -n $LJ_NTASKS python main.py)
+else
+    RUN=(python main.py)
+fi
+"${RUN[@]}" "$@" || status=$?
 
 echo
 echo "finished : $(date -Is) (exit $status)"

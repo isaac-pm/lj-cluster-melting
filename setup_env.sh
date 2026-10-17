@@ -4,6 +4,7 @@
 # Aion and Iris share the same $HOME, so one run there serves both clusters.
 #
 #   bash setup_env.sh            # NumPy + Matplotlib (requirements.txt)
+#   bash setup_env.sh --mpi      # + OpenMPI and mpi4py (from conda-forge)
 #   bash setup_env.sh --gpu      # also requirements-gpu.txt (Iris or local NVIDIA GPU)
 #   bash setup_env.sh --recreate # delete and rebuild the env
 #
@@ -20,12 +21,14 @@ CUDA_MODULE=${CUDA_MODULE:-system/CUDA/12.6.0}
 REPO_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 WITH_GPU=0
+WITH_MPI=0
 RECREATE=0
 for arg in "$@"; do
     case $arg in
         --gpu) WITH_GPU=1 ;;
+        --mpi) WITH_MPI=1 ;;
         --recreate) RECREATE=1 ;;
-        -h|--help) sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "Unknown option: $arg" >&2; exit 1 ;;
     esac
 done
@@ -52,6 +55,9 @@ if [[ ! -x "$CONDA_ROOT/bin/conda" ]]; then
     installer=$(mktemp "${TMPDIR:-/tmp}/miniforge.XXXXXX")
     url=https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$(uname)-$(uname -m).sh
     if command -v wget >/dev/null; then wget -qO "$installer" "$url"; else curl -fsSL -o "$installer" "$url"; fi
+    # The installer refuses to run unless its filename ends in .sh
+    mv "$installer" "$installer.sh"
+    installer="$installer.sh"
     bash "$installer" -b -p "$CONDA_ROOT"
     rm -f "$installer"
     # Make `conda activate` work in future interactive shells, without
@@ -86,6 +92,13 @@ set -u
 log "Installing requirements.txt"
 python -m pip install --upgrade pip setuptools wheel
 python -m pip install --upgrade -r "$REPO_DIR/requirements.txt"
+
+if [[ $WITH_MPI == 1 ]]; then
+    # mpi4py has no PyPI wheel; conda-forge ships it linked against OpenMPI.
+    # Installed here so the pip-based flow below never touches it.
+    log "Installing OpenMPI + mpi4py from conda-forge"
+    conda install -y -c conda-forge --override-channels "openmpi>=4.1" "mpi4py>=4.0"
+fi
 
 if [[ $WITH_GPU == 1 ]]; then
     # Packages that build against CUDA need the toolkit: on the clusters it

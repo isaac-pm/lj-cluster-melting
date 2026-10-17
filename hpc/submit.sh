@@ -8,6 +8,8 @@
 #   iris cpu   7 cores, 28 GB, shared node                 (partition batch)
 #   iris gpu   1 V100 GPU + 7 cores                        (partition gpu)
 #   aion gpu   not available (Aion has no GPUs)
+#   aion/iris mpi  whole node as MPI ranks for main.py --mode scan
+#                   (1 master + N workers; one rank per energy/replica)
 #
 # Any sbatch options given here override the profile, for example:
 #   hpc/submit.sh cpu -t 08:00:00 -- --n-atoms 13
@@ -23,7 +25,7 @@ DRY_RUN=0
 SBATCH_ARGS=()
 MAIN_ARGS=()
 
-if [[ ${1:-} == cpu || ${1:-} == gpu ]]; then
+if [[ ${1:-} == cpu || ${1:-} == gpu || ${1:-} == mpi ]]; then
     PROFILE=$1
     shift
 fi
@@ -53,10 +55,21 @@ case $CLUSTER-$PROFILE in
     iris-gpu)
         RESOURCES=(--partition=gpu --qos=normal --nodes=1 --ntasks=1
                    --cpus-per-task=7 --gpus=1 --time=02:00:00) ;;
+    aion-mpi)
+        RESOURCES=(--partition=batch --qos=normal --nodes=1 --ntasks=128
+                   --cpus-per-task=1 --exclusive --time=02:00:00) ;;
+    iris-mpi)
+        RESOURCES=(--partition=batch --qos=normal --nodes=1 --ntasks=7
+                   --cpus-per-task=1 --time=02:00:00) ;;
     aion-gpu)
         echo "Aion has no GPUs; submit GPU jobs from Iris (or use 'cpu' here)." >&2
         exit 1 ;;
 esac
+
+# MPI profiles run one rank per core; job.sh turns LJ_MPI=1 into mpiexec.
+if [[ $PROFILE == mpi ]]; then
+    export LJ_MPI=1
+fi
 
 mkdir -p "$REPO_DIR/logs"
 CMD=(sbatch --job-name="lj-melt-$CLUSTER-$PROFILE" --chdir="$REPO_DIR"
