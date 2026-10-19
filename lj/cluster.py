@@ -63,15 +63,22 @@ def mackay_icosahedron() -> np.ndarray:
     return positions - positions.mean(axis=0)
 
 
-def bcc_lattice_sites(num_particles: int, lattice_constant: float = 1.0) -> np.ndarray:
+def bcc_lattice_sites(num_particles: int, lattice_constant: float | None = None) -> np.ndarray:
     """Sites of a body-centred cubic cluster around the origin.
 
     Keeps the lattice sites closest to the origin, so the cluster grows in
     shells around a central particle. Used as a generic fallback for
     cluster sizes without a known minimum-energy geometry.
+
+    The default lattice constant places the nearest-neighbour distance at
+    the LJ minimum 2**(1/6), so the cluster starts in a bound, physical
+    configuration rather than an artificially dense one.
     """
     import math
 
+    if lattice_constant is None:
+        # BCC nearest-neighbour distance is sqrt(3)/2 * a; set it to the LJ minimum
+        lattice_constant = LJ_MIN_DISTANCE * 2.0 / np.sqrt(3.0)
     half_width = math.ceil(num_particles ** (1 / 3))
     sites = []
     for i in range(-half_width, half_width + 1):

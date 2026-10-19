@@ -8,8 +8,8 @@
 #SBATCH --job-name=lj-melt
 #SBATCH --partition=batch
 #SBATCH --qos=normal
-#SBATCH --nodes=1
-#SBATCH --ntasks=1
+#SBATCH --nodes=3
+#SBATCH --ntasks=384
 #SBATCH --cpus-per-task=1
 #SBATCH --time=02:00:00
 #SBATCH --output=logs/%x-%j.out

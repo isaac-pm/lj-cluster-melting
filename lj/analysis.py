@@ -33,14 +33,14 @@ def caloric_table(results: list[dict]) -> dict[str, np.ndarray]:
     energies = np.asarray(energies)
     t_mean = np.asarray(t_mean)
 
-    # Microcanonical heat capacity C = dE/dT from finite differences of the
-    # caloric curve. Diverges at the transition -> the peak is the signal.
-    if len(energies) >= 3:
-        dtde = np.gradient(t_mean, energies)
-        with np.errstate(divide="ignore", invalid="ignore"):
-            heat_capacity = np.where(dtde > 1e-9, 1.0 / dtde, np.nan)
-    else:
-        heat_capacity = np.full_like(energies, np.nan)
+    # Microcanonical heat capacity C = dE/dT. Raw finite differences of a
+    # noisy few-replica caloric curve explode near the plateau (where
+    # dT/dE straddles zero), producing spurious "peaks". We instead smooth
+    # T(E) with local polynomial fits and differentiate those, which keeps
+    # C = 1/(dT/dE) finite and the peak on the actual plateau.
+    dtde = _smooth_dtde(energies, t_mean)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        heat_capacity = np.where(dtde > 1e-9, 1.0 / dtde, np.nan)
 
     return {
         "energy": energies,
@@ -53,11 +53,33 @@ def caloric_table(results: list[dict]) -> dict[str, np.ndarray]:
     }
 
 
+def _smooth_dtde(energies: np.ndarray, t_mean: np.ndarray, window: int = 9) -> np.ndarray:
+    """Smoothed dT/dE via local polynomial fits (handles non-uniform E).
+
+    ``window`` is the number of neighbouring points used for each local fit.
+    It is clamped to the available data so sparse grids still work. The
+    default of 9 spans ~0.09 sigma_E on the 0.01-resolved scan grid.
+    """
+    n = len(t_mean)
+    window = min(window, n if n % 2 == 1 else n - 1)
+    half = max(window // 2, 1)
+    dtde = np.empty(n)
+    for i in range(n):
+        lo, hi = max(0, i - half), min(n, i + half + 1)
+        xs = energies[lo:hi] - energies[i]
+        ys = t_mean[lo:hi]
+        deg = min(2, len(xs) - 1)
+        coeffs = np.polyfit(xs, ys, deg)
+        # derivative at the centre point xs=0 is the linear coefficient
+        dtde[i] = coeffs[-2] if len(coeffs) >= 2 else 0.0
+    return dtde
+
+
 def melting_summary(table: dict[str, np.ndarray]) -> dict:
     """Rough transition markers from the caloric curve.
 
-    peak_heat_capacity: energy where C peaks (finite-difference estimate of
-        the transition region).
+    peak_heat_capacity: energy where the smoothed C = dE/dT is maximal
+        (the caloric plateau).
     lindemann_crossing: first energy where the Lindemann index exceeds 0.1
         (scanned from low energy upwards).
     """
@@ -66,8 +88,8 @@ def melting_summary(table: dict[str, np.ndarray]) -> dict:
         "peak_heat_capacity": None,
         "lindemann_crossing": None,
         "note": (
-            "finite-resolution estimate: the heat-capacity peak and the "
-            "Lindemann 0.1 crossing bracket the solid-liquid crossover"
+            "smoothed finite-resolution estimate: the heat-capacity peak and "
+            "the Lindemann 0.1 crossing bracket the solid-liquid crossover"
         ),
     }
     if valid.any():
@@ -96,20 +118,21 @@ def write_caloric_plot(table: dict[str, np.ndarray], path: str) -> None:
         fmt="o-",
         color="#58a6ff",
         capsize=3,
+        markersize=3,
     )
     ax.set_xlabel(r"$E^\star$ ($\varepsilon$)")
     ax.set_ylabel(r"$T^\star$ ($\varepsilon/k_B$)")
     ax.set_title("caloric curve")
 
     ax = axes[1]
-    ax.plot(table["energy"], table["heat_capacity"], "s-", color="#f778ba")
+    ax.plot(table["energy"], table["heat_capacity"], "-", color="#f778ba", lw=1)
     ax.set_xlabel(r"$E^\star$ ($\varepsilon$)")
     ax.set_ylabel(r"$C^\star = dE/dT$")
-    ax.set_title("heat capacity")
+    ax.set_title("heat capacity (smoothed)")
     ax.set_ylim(bottom=0)
 
     ax = axes[2]
-    ax.plot(table["energy"], table["lindemann_mean"], "^-", color="#3fb950")
+    ax.plot(table["energy"], table["lindemann_mean"], "-", color="#3fb950", lw=1)
     ax.axhline(0.1, color="#8b949e", ls="--", lw=1, label="0.1")
     ax.legend()
     ax.set_xlabel(r"$E^\star$ ($\varepsilon$)")

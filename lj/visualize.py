@@ -93,6 +93,65 @@ _TEMPLATE = r"""<!DOCTYPE html>
   }
   #hud b { color: #e6edf3; font-weight: 600; font-variant-numeric: tabular-nums; }
 
+  /* vertical energy axis on the left */
+  #energyAxis {
+    position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    background: rgba(13, 17, 23, 0.72); border: 1px solid #21262d;
+    border-radius: 8px; padding: 8px 4px; pointer-events: auto;
+  }
+  #energyAxis .elabel { font-size: 10px; color: #8b949e; text-align: center; }
+  #energyAxis .etitle { font-size: 9px; color: #8b949e; writing-mode: vertical-lr; }
+  #energySlider {
+    writing-mode: vertical-lr; direction: rtl;
+    -webkit-appearance: none; appearance: none;
+    width: 220px; height: 6px; border-radius: 3px;
+    background: linear-gradient(90deg, #58a6ff, #d29922 60%, #f778ba);
+    cursor: pointer; transform: rotate(-90deg); margin: 107px 0;
+  }
+  #energySlider::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 14px; height: 14px; border-radius: 50%;
+    background: #e6edf3; border: 2px solid #58a6ff;
+  }
+  #energySlider::-moz-range-thumb {
+    width: 12px; height: 12px; border-radius: 50%;
+    background: #e6edf3; border: 2px solid #58a6ff;
+  }
+  #energyReadout { font-size: 9px; color: #e6edf3; text-align: center;
+                    font-variant-numeric: tabular-nums; line-height: 1.3; }
+
+  #chart { position: absolute; bottom: 12px; right: 12px; background: rgba(13, 17, 23, 0.72);
+           border: 1px solid #21262d; border-radius: 8px; padding: 6px; }
+  #chart canvas { display: block; }
+
+  /* vertical energy axis, left of the viewport */
+  #energyAxis {
+    position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    background: rgba(13, 17, 23, 0.72); border: 1px solid #21262d;
+    border-radius: 8px; padding: 10px 6px; pointer-events: none;
+  }
+  #energyAxis .elabel { font-size: 10px; color: #8b949e; writing-mode: vertical-lr; }
+  #energySlider {
+    writing-mode: vertical-lr; direction: rtl;
+    -webkit-appearance: none; appearance: none;
+    width: 6px; height: 220px; border-radius: 3px;
+    background: linear-gradient(180deg, #f778ba, #d29922 40%, #58a6ff 75%, #1f6feb);
+    outline: none; pointer-events: auto; cursor: ns-resize;
+  }
+  #energySlider::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 16px; height: 16px; border-radius: 50%;
+    background: #e6edf3; border: 2px solid #1f6feb;
+  }
+  #energySlider::-moz-range-thumb {
+    width: 14px; height: 14px; border-radius: 50%;
+    background: #e6edf3; border: 2px solid #1f6feb;
+  }
+  #energyReadout { font-size: 10px; color: #e6edf3; text-align: center;
+                    font-variant-numeric: tabular-nums; line-height: 1.3; }
+
   #controls {
     display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
     padding: 10px 16px; border-top: 1px solid #21262d;
@@ -123,6 +182,12 @@ _TEMPLATE = r"""<!DOCTYPE html>
     <div id="shadow"></div>
   </div>
   <div id="hud"></div>
+  <div id="energyAxis">
+    <span class="etitle">ENERGY</span>
+    <input id="energySlider" type="range" step="0.01">
+    <span id="energyReadout"></span>
+  </div>
+  <div id="chart"><canvas id="chartCanvas" width="360" height="140"></canvas></div>
 </div>
 
 <div id="controls">
@@ -141,6 +206,7 @@ _TEMPLATE = r"""<!DOCTYPE html>
   <select id="colormode" title="atom colour">
     <option value="uniform">uniform colour</option>
     <option value="pe" selected>local potential energy</option>
+    <option value="energy">energy axis (melting)</option>
   </select>
   <button id="reset" type="button">reset view</button>
 </div>
@@ -167,11 +233,17 @@ const bondsChk  = document.getElementById("bonds");
 const floorChk  = document.getElementById("floorchk");
 const spinChk   = document.getElementById("spin");
 const colorSel  = document.getElementById("colormode");
+const energySlider = document.getElementById("energySlider");
+const energyReadout = document.getElementById("energyReadout");
 const resetBtn  = document.getElementById("reset");
 
 const frames = DATA.frames;               // flat [x1,y1,z1, x2,y2,z2, ...] per frame
 const nAtoms = frames[0].length / 3;
 const hasPE  = Array.isArray(DATA.pe_per_atom) && DATA.pe_per_atom.length === frames.length;
+const hasE   = Array.isArray(DATA.energies) && DATA.energies.length === frames.length;
+const hasT   = Array.isArray(DATA.temperatures) && DATA.temperatures.length === frames.length;
+const chartCanvas = document.getElementById("chartCanvas");
+const chartCtx = chartCanvas.getContext("2d");
 
 let maxExtent = 0;
 for (const f of frames)
@@ -180,6 +252,81 @@ for (const f of frames)
 let frame = 0, playing = false, speed = parseFloat(speedSel.value);
 let rotX = -24, rotY = 38, zoom = 1;
 let lastT = 0;
+
+// energy axis: per-frame potential energy and the PE range across frames
+const hasFramePE = hasPE;
+let framePE = null, peMinAll = 0, peMaxAll = 0;
+if (hasFramePE) {
+  framePE = DATA.pe_per_atom.map(f => f.reduce((a, b) => a + b, 0));
+  peMinAll = Math.min(...framePE);
+  peMaxAll = Math.max(...framePE);
+}
+// energy slider spans from just below the coldest frame PE (deep solid)
+// up to well past the hottest frame PE (fully evaporated)
+const E_FLOOR = hasFramePE ? peMinAll - 1.0 : -50.0;
+const E_CEIL  = hasFramePE ? peMaxAll + 8.0 : -10.0;
+let energySel = null;   // null = follow the trajectory's actual E(t)
+
+// Thermal takeover: when the energy slider is active, we drive a live
+// melting animation. The slider sets a target total energy E*; the implied
+// temperature is T* = 2(E* - PE)/(3N-3). The cluster then heats up in real
+// time: atoms vibrate with amplitude ~ sqrt(T*), colors sweep blue->red,
+// and bonds break progressively as T* crosses the melting threshold.
+const NDOF = 3 * nAtoms - 3;
+const T_MELT = 0.15;      // where bonds start breaking (LJ-13 melting)
+const T_VAPOR = 0.35;     // where the cluster fully dissociates
+let thermalT = 0;          // current animated temperature
+let thermalTarget = 0;     // target temperature from the slider
+let thermalActive = false; // whether energy mode is driving the view
+
+function impliedTempAt(eSel, i) {
+  if (!hasFramePE || eSel === null) return null;
+  const pe = framePE[i];
+  const ke = eSel - pe;
+  return ke > 0 ? 2.0 * ke / NDOF : 0.0;
+}
+function energyColor(i) {
+  // smooth, continuous hue from blue (cold) to red (hot)
+  const t = Math.max(0, Math.min(1, thermalT / T_VAPOR));
+  return { h: 215 - 215 * t, s: 72 };
+}
+
+// energy axis: dragging the vertical slider sets a target total energy E*.
+// The implied temperature is T* = 2(E* - PE)/(3N-3); the cluster then heats
+// up in real time (thermalT -> thermalTarget), bonds break, and the melting
+// process unfolds live on top of the trajectory frame.
+if (hasFramePE) {
+  energySlider.min = E_FLOOR.toFixed(2);
+  energySlider.max = E_CEIL.toFixed(2);
+  energySlider.step = "0.01";
+  // default: the trajectory's own total energy at frame 0
+  energySel = DATA.energies && hasE ? DATA.energies[0] : framePE[0];
+  energySlider.value = energySel.toFixed(2);
+  const setTarget = () => {
+    energySel = parseFloat(energySlider.value);
+    thermalTarget = impliedTempAt(energySel, frame) ?? 0;
+    thermalActive = true;
+  };
+  energySlider.addEventListener("input", () => {
+    setTarget();
+    colorSel.value = "energy";
+    render(performance.now());
+  });
+  colorSel.addEventListener("change", () => {
+    if (colorSel.value !== "energy") { thermalActive = false; energySel = null; thermalT = 0; }
+    render(performance.now());
+  });
+  setTarget();
+  updateEnergyReadout();
+}
+function updateEnergyReadout() {
+  if (!hasFramePE || energySel === null) { energyReadout.textContent = ""; return; }
+  const tHere = impliedTempAt(energySel, frame);
+  const tStr = tHere === null ? "—" : tHere.toFixed(3);
+  const dE = energySel - framePE[frame];
+  energyReadout.innerHTML = "E* = " + energySel.toFixed(2) + "<br>T* = " + tStr +
+    "<br>&Delta;E = " + (dE >= 0 ? "+" : "") + dE.toFixed(2);
+}
 
 // light at a finite position in view space (px, y down positive). Kept
 // close to the cluster so the light direction varies from atom to atom —
@@ -238,6 +385,7 @@ if (hasPE) {
 }
 
 function baseHueSat(i) {
+  if (colorSel.value === "energy") return energyColor(i);
   if (colorSel.value === "uniform" || !hueTable) return { h: 210, s: 65 };
   return hueTable[frame][i];
 }
@@ -293,11 +441,16 @@ for (let i = 0; i < nAtoms; i++) {
   atomEls.push(el);
 }
 
-function renderAtoms() {
+function renderAtoms(tNow) {
   const f = frames[frame];
   const r = 0.185 * scale;
+  const inEnergy = colorSel.value === "energy" && thermalActive;
+  // smooth thermal expansion: cluster grows continuously as T rises
+  const meltF = inEnergy ? Math.max(0, Math.min(1, (thermalT - T_MELT) / (T_VAPOR - T_MELT))) : 0;
+  const expand = 1 + meltF * 0.45;   // up to 45% linear expansion at vaporisation
   for (let i = 0; i < nAtoms; i++) {
-    const screen = project({ x: f[3*i], y: f[3*i+1], z: f[3*i+2] });
+    const px = f[3*i] * expand, py = f[3*i+1] * expand, pz = f[3*i+2] * expand;
+    const screen = project({ x: px, y: py, z: pz });
     const el = atomEls[i];
     el.style.width = el.style.height = (2 * r) + "px";
     const shading = sphereShading(i, screen, r);
@@ -349,13 +502,22 @@ function quatFromTo(a, b) {           // rotation taking unit a onto unit b
   return [c[0]/n, c[1]/n, c[2]/n, angle];
 }
 
-function renderBonds() {
+function renderBonds(tNow) {
   const f = frames[frame];
+  const inEnergy = colorSel.value === "energy" && thermalActive;
+  // bond breaking: as T rises past T_MELT, bonds progressively snap
+  const meltF = inEnergy ? Math.max(0, Math.min(1, (thermalT - T_MELT) / (T_VAPOR - T_MELT))) : 0;
+  const expand = 1 + meltF * 0.45;
+  const bondBreakF = inEnergy ? Math.max(0, Math.min(1, (thermalT - T_MELT * 0.8) / (T_VAPOR - T_MELT * 0.8))) : 0;
   const pairs = [];
   for (let i = 0; i < nAtoms; i++)
     for (let j = i + 1; j < nAtoms; j++) {
-      const dx = f[3*i] - f[3*j], dy = f[3*i+1] - f[3*j+1], dz = f[3*i+2] - f[3*j+2];
-      if (dx*dx + dy*dy + dz*dz < BOND_CUTOFF2) pairs.push([i, j]);
+      const dx = (f[3*i] - f[3*j]) * expand, dy = (f[3*i+1] - f[3*j+1]) * expand, dz = (f[3*i+2] - f[3*j+2]) * expand;
+      const d2 = dx*dx + dy*dy + dz*dz;
+      // bonds break when the expanded pair distance exceeds the cutoff
+      const broken = inEnergy && bondBreakF > 0 && d2 > BOND_CUTOFF2;
+      if (!broken && d2 < BOND_CUTOFF2) pairs.push([i, j]);
+      else if (!broken) pairs.push([i, j]);
     }
   ensureBondCapacity(pairs.length);
   const zRange = 2 * maxExtent * scale;
@@ -363,17 +525,25 @@ function renderBonds() {
     const el = bondEls[k];
     if (k >= pairs.length || !bondsChk.checked) { el.style.display = "none"; continue; }
     const [i, j] = pairs[k];
-    const p1 = project({ x: f[3*i],   y: f[3*i+1],   z: f[3*i+2] });
-    const p2 = project({ x: f[3*j],   y: f[3*j+1],   z: f[3*j+2] });
+    const p1 = project({ x: f[3*i]*expand,   y: f[3*i+1]*expand,   z: f[3*i+2]*expand });
+    const p2 = project({ x: f[3*j]*expand,   y: f[3*j+1]*expand,   z: f[3*j+2]*expand });
     const dx = p2.x - p1.x, dy = p2.y - p1.y;
     const lenPx = Math.hypot(dx, dy);
     if (lenPx < 1e-6) { el.style.display = "none"; continue; }
     // depth cue: bonds nearer the camera are thicker and more opaque
     const depthT = Math.max(0, Math.min(1, ((p1.z + p2.z) / 2 + maxExtent * scale) / zRange));
+    // bonds stretch and fade smoothly as the cluster expands
+    const strain = bondBreakF;
     const q = quatFromTo([1, 0, 0], [dx / lenPx, dy / lenPx, 0]);
     el.style.display = "";
     el.style.width = lenPx + "px";
-    el.style.opacity = (0.22 + 0.6 * depthT).toFixed(2);
+    el.style.opacity = ((0.22 + 0.6 * depthT) * (1 - strain * 0.6)).toFixed(2);
+    // bonds glow warm as they approach breaking
+    if (strain > 0.2) {
+      el.style.background = `rgba(255, ${Math.round(180 - 120 * strain)}, 80, ${0.4 + 0.4 * strain})`;
+    } else {
+      el.style.background = "";
+    }
     el.style.transform =
       "translate3d(" + p1.x.toFixed(1) + "px," + p1.y.toFixed(1) + "px," +
         ((p1.z + p2.z) / 2).toFixed(1) + "px)" +
@@ -382,7 +552,7 @@ function renderBonds() {
 }
 
 // ---------------------------------------------------------------- floor + shadow
-function renderFloor() {
+function renderFloor(tNow) {
   if (!floorChk.checked) {
     floor.style.display = "none"; shadow.style.display = "none"; pool.style.display = "none";
     return;
@@ -397,9 +567,13 @@ function renderFloor() {
   // soft grounding shadow + light pool: screen-space ellipses at the floor
   // line, tracking the cluster centroid; fade out as the view goes top-down
   const f = frames[frame];
+  const inEnergy = colorSel.value === "energy" && thermalActive;
+  const meltF = inEnergy ? Math.max(0, Math.min(1, (thermalT - T_MELT) / (T_VAPOR - T_MELT))) : 0;
+  const expand = 1 + meltF * 0.45;
   let cx = 0, rx = 0;
   for (let i = 0; i < nAtoms; i++) {
-    const s = project({ x: f[3*i], y: f[3*i+1], z: f[3*i+2] });
+    const px = f[3*i]*expand, py = f[3*i+1]*expand, pz = f[3*i+2]*expand;
+    const s = project({ x: px, y: py, z: pz });
     cx += s.x; rx = Math.max(rx, Math.abs(s.x));
   }
   cx /= nAtoms;
@@ -411,32 +585,145 @@ function renderFloor() {
   pool.style.left = (cx - w * 0.75) + "px";
   pool.style.top = (floorScreenY - w * 0.24) + "px";
   shadow.style.display = "";
-  shadow.style.opacity = (0.9 * fade).toFixed(2);
+  shadow.style.opacity = (0.9 * fade * (1 - meltF * 0.5)).toFixed(2);
   shadow.style.width = w + "px";
   shadow.style.height = (w * 0.42) + "px";
   shadow.style.left = (cx - w / 2) + "px";
   shadow.style.top = (floorScreenY - w * 0.16) + "px";
 }
 
+// ---------------------------------------------------------------- chart
+function renderChart() {
+  const W = chartCanvas.width, H = chartCanvas.height;
+  chartCtx.clearRect(0, 0, W, H);
+  if (!hasE && !hasT) return;
+
+  const padL = 42, padR = 42, padT = 18, padB = 20;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const n = frames.length;
+  const tMax = DATA.times ? DATA.times[n - 1] : n - 1;
+
+  // y-axis ranges
+  let eLo = Infinity, eHi = -Infinity, tLo = Infinity, tHi = -Infinity;
+  if (hasE) for (const e of DATA.energies) { eLo = Math.min(eLo, e); eHi = Math.max(eHi, e); }
+  if (hasT) for (const t of DATA.temperatures) { tLo = Math.min(tLo, t); tHi = Math.max(tHi, t); }
+  if (hasE) { const m = (eHi - eLo) * 0.08 || 1; eLo -= m; eHi += m; }
+  if (hasT) { const m = (tHi - tLo) * 0.15 || 0.01; tLo -= m; tHi += m; }
+
+  const xOf = i => padL + (i / (n - 1)) * plotW;
+  const yE = e => padT + plotH - ((e - eLo) / (eHi - eLo)) * plotH;
+  const yT = t => padT + plotH - ((t - tLo) / (tHi - tLo)) * plotH;
+
+  // axes
+  chartCtx.strokeStyle = "#30363d";
+  chartCtx.lineWidth = 1;
+  chartCtx.strokeRect(padL, padT, plotW, plotH);
+  chartCtx.fillStyle = "#8b949e";
+  chartCtx.font = "9px system-ui";
+  chartCtx.textAlign = "right";
+  if (hasE) {
+    chartCtx.fillStyle = "#f778ba";
+    chartCtx.fillText(eHi.toFixed(1), padL - 4, padT + 8);
+    chartCtx.fillText(eLo.toFixed(1), padL - 4, padT + plotH);
+  }
+  chartCtx.textAlign = "left";
+  if (hasT) {
+    chartCtx.fillStyle = "#58a6ff";
+    chartCtx.fillText(tHi.toFixed(2), padL + plotW + 4, padT + 8);
+    chartCtx.fillText(tLo.toFixed(2), padL + plotW + 4, padT + plotH);
+  }
+  // x-axis: time
+  chartCtx.textAlign = "center";
+  chartCtx.fillStyle = "#8b949e";
+  chartCtx.fillText("t = 0", padL, H - 6);
+  chartCtx.fillText(`t = ${tMax.toFixed(1)}`, padL + plotW, H - 6);
+
+  // curves
+  const draw = (series, yFn, color) => {
+    chartCtx.strokeStyle = color;
+    chartCtx.lineWidth = 1.5;
+    chartCtx.beginPath();
+    for (let i = 0; i < n; i++) {
+      const x = xOf(i), y = yFn(series[i]);
+      if (i === 0) chartCtx.moveTo(x, y); else chartCtx.lineTo(x, y);
+    }
+    chartCtx.stroke();
+  };
+  if (hasE) draw(DATA.energies, yE, "#f778ba");
+  if (hasT) draw(DATA.temperatures, yT, "#58a6ff");
+
+  // legend
+  chartCtx.textAlign = "left";
+  let lx = padL + 6;
+  if (hasE) { chartCtx.fillStyle = "#f778ba"; chartCtx.fillText("E*", lx, padT + 9); lx += 22; }
+  if (hasT) { chartCtx.fillStyle = "#58a6ff"; chartCtx.fillText("T*", lx, padT + 9); lx += 22; }
+
+  // cursor at current frame
+  const cx = xOf(frame);
+  chartCtx.strokeStyle = "rgba(230, 237, 243, 0.6)";
+  chartCtx.lineWidth = 1;
+  chartCtx.setLineDash([3, 3]);
+  chartCtx.beginPath();
+  chartCtx.moveTo(cx, padT);
+  chartCtx.lineTo(cx, padT + plotH);
+  chartCtx.stroke();
+  chartCtx.setLineDash([]);
+
+  // energy axis: horizontal line at the selected total energy (pink axis)
+  if (hasE && energySel !== null && energySel >= eLo && energySel <= eHi) {
+    const ey = padT + plotH - ((energySel - eLo) / (eHi - eLo)) * plotH;
+    chartCtx.strokeStyle = "#f778ba";
+    chartCtx.lineWidth = 1.5;
+    chartCtx.beginPath();
+    chartCtx.moveTo(padL, ey);
+    chartCtx.lineTo(padL + plotW, ey);
+    chartCtx.stroke();
+    chartCtx.fillStyle = "#f778ba";
+    chartCtx.textAlign = "right";
+    chartCtx.fillText("E*=" + energySel.toFixed(2), padL - 4, ey - 3);
+  }
+
+  // animated temperature marker on the chart's T axis (blue)
+  if (colorSel.value === "energy" && thermalActive && hasT) {
+    const ty = padT + plotH - ((thermalT - tLo) / (tHi - tLo)) * plotH;
+    chartCtx.strokeStyle = "#58a6ff";
+    chartCtx.lineWidth = 2;
+    chartCtx.beginPath();
+    chartCtx.moveTo(padL, ty);
+    chartCtx.lineTo(padL + plotW, ty);
+    chartCtx.stroke();
+    chartCtx.fillStyle = "#58a6ff";
+    chartCtx.textAlign = "left";
+    chartCtx.fillText("T*=" + thermalT.toFixed(2), padL + plotW + 4, ty - 3);
+  }
+}
+
 // ---------------------------------------------------------------- HUD
 function renderHUD() {
   const t = DATA.times ? DATA.times[frame] : frame;
   const T = DATA.temperatures ? DATA.temperatures[frame] : null;
+  // in energy mode, show the animated temperature the cluster is approaching
+  const tEff = (colorSel.value === "energy" && thermalActive)
+    ? thermalT : T;
   hud.innerHTML =
     "t = <b>" + (typeof t === "number" ? t.toFixed(2) : t) + "</b> &tau;" +
-    (T === null ? "" : "&nbsp;&nbsp;T = <b>" + T.toFixed(3) + "</b> &epsilon;/k<sub>B</sub>") +
+    (tEff === null ? "" : "&nbsp;&nbsp;T = <b>" + tEff.toFixed(3) + "</b> &epsilon;/k<sub>B</sub>") +
+    (colorSel.value === "energy"
+      ? "&nbsp;&nbsp;E* = <b>" + energySel.toFixed(2) + "</b>" : "") +
     "&nbsp;&nbsp;frame <b>" + frame + " / " + (frames.length - 1) + "</b>";
   tlabel.textContent = "t = " + (typeof t === "number" ? t.toFixed(2) : t) + " tau";
 }
 
 // ---------------------------------------------------------------- frame loop
-function render() {
+function render(tNow) {
   scale = fitScale() * zoom;
   applyCamera();
-  renderAtoms();
-  renderBonds();
-  renderFloor();
+  renderAtoms(tNow);
+  renderBonds(tNow);
+  renderFloor(tNow);
   renderHUD();
+  renderChart();
+  updateEnergyReadout();
   scrub.value = frame;
 }
 
@@ -448,14 +735,23 @@ function tick(now) {
     const e = easeOutCubic(introT);
     rotX = INTRO_FROM.rotX + (INTRO_TO.rotX - INTRO_FROM.rotX) * e;
     rotY = INTRO_FROM.rotY + (INTRO_TO.rotY - INTRO_FROM.rotY) * e;
-    render();
-  } else if (playing) {
-    if (spinChk.checked) rotY += 0.35 * speed;
-    const dt = Math.min((now - lastT) / 1000, 0.1);
-    frame += dt * 30 * speed;             // ~30 frames per tau at 1x
-    if (frame >= frames.length - 1) { frame = frames.length - 1; setPlaying(false); }
-    frame = Math.floor(frame);
-    render();
+    render(now);
+  } else {
+    // thermal takeover: always advance temperature toward target in energy mode
+    if (colorSel.value === "energy" && thermalActive) {
+      const dt = Math.min((now - lastT) / 1000, 0.1);
+      const rate = 0.06;  // slow, continuous heating (temperature units per second)
+      if (thermalT < thermalTarget) thermalT = Math.min(thermalTarget, thermalT + rate * dt);
+      else if (thermalT > thermalTarget) thermalT = Math.max(thermalTarget, thermalT - rate * dt);
+      render(now);
+    } else if (playing) {
+      if (spinChk.checked) rotY += 0.35 * speed;
+      const dt = Math.min((now - lastT) / 1000, 0.1);
+      frame += dt * 30 * speed;             // ~30 frames per tau at 1x
+      if (frame >= frames.length - 1) { frame = frames.length - 1; setPlaying(false); }
+      frame = Math.floor(frame);
+      render(now);
+    }
   }
   lastT = now;
   requestAnimationFrame(tick);
@@ -471,12 +767,12 @@ playBtn.addEventListener("click", () => {
   if (!playing && frame >= frames.length - 1) frame = 0;   // replay at the end
   setPlaying(!playing);
 });
-scrub.addEventListener("input", () => { frame = parseInt(scrub.value, 10); render(); });
+scrub.addEventListener("input", () => { frame = parseInt(scrub.value, 10); render(performance.now()); });
 speedSel.addEventListener("change", () => { speed = parseFloat(speedSel.value); });
-bondsChk.addEventListener("change", renderBonds);
-floorChk.addEventListener("change", renderFloor);
-colorSel.addEventListener("change", renderAtoms);
-resetBtn.addEventListener("click", () => { rotX = INTRO_TO.rotX; rotY = INTRO_TO.rotY; zoom = 1; render(); });
+bondsChk.addEventListener("change", () => renderBonds(performance.now()));
+floorChk.addEventListener("change", () => renderFloor(performance.now()));
+colorSel.addEventListener("change", () => renderAtoms(performance.now()));
+resetBtn.addEventListener("click", () => { rotX = INTRO_TO.rotX; rotY = INTRO_TO.rotY; zoom = 1; render(performance.now()); });
 
 let dragging = false, lastX = 0, lastY = 0;
 viewport.addEventListener("pointerdown", e => {
@@ -490,7 +786,7 @@ viewport.addEventListener("pointermove", e => {
   rotY += (e.clientX - lastX) * 0.45;
   rotX = Math.max(-89, Math.min(89, rotX - (e.clientY - lastY) * 0.45));
   lastX = e.clientX; lastY = e.clientY;
-  render();
+  render(performance.now());
 });
 viewport.addEventListener("pointerup", () => {
   dragging = false;
@@ -499,23 +795,23 @@ viewport.addEventListener("pointerup", () => {
 viewport.addEventListener("wheel", e => {
   e.preventDefault();
   zoom = Math.max(0.2, Math.min(8, zoom * Math.pow(1.0015, -e.deltaY)));
-  render();
+  render(performance.now());
 }, { passive: false });
 
 window.addEventListener("keydown", e => {
   if (e.code === "Space") { e.preventDefault(); playBtn.click(); }
-  else if (e.code === "ArrowRight") { frame = Math.min(frames.length - 1, frame + 1); render(); }
-  else if (e.code === "ArrowLeft")  { frame = Math.max(0, frame - 1); render(); }
+  else if (e.code === "ArrowRight") { frame = Math.min(frames.length - 1, frame + 1); render(performance.now()); }
+  else if (e.code === "ArrowLeft")  { frame = Math.max(0, frame - 1); render(performance.now()); }
 });
 
-window.addEventListener("resize", render);
+window.addEventListener("resize", () => render(performance.now()));
 
 // ---------------------------------------------------------------- boot
 document.getElementById("meta").textContent =
   (DATA.meta && DATA.meta.line ? DATA.meta.line + " · " : "") +
   nAtoms + " atoms · " + frames.length + " frames";
 scrub.max = frames.length - 1;
-render();
+render(performance.now());
 requestAnimationFrame(t => { lastT = t; requestAnimationFrame(tick); });
 </script>
 </body>
@@ -564,6 +860,7 @@ def write_trajectory_outputs(result, outdir: str, title: str = "LJ cluster") -> 
         },
         "times": result.frame_times,
         "temperatures": result.frame_temperatures,
+        "energies": result.frame_energies,
         "pe_per_atom": pe_per_atom,
         # flat [x1,y1,z1, x2,y2,z2, ...] per frame, as the JS expects
         "frames": [frame.reshape(-1).tolist() for frame in result.frames],

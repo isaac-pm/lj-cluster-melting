@@ -67,6 +67,7 @@ class RunResult:
     frames: list[np.ndarray] = field(default_factory=list)
     frame_times: list[float] = field(default_factory=list)
     frame_temperatures: list[float] = field(default_factory=list)
+    frame_energies: list[float] = field(default_factory=list)
     wall_time: float = 0.0
 
     def downsampled_samples(self, max_points: int = 1000) -> dict[str, np.ndarray]:
@@ -92,7 +93,8 @@ def run_trajectory(
         force_eval = SerialForces(config.cutoff)
 
     rng = np.random.default_rng(config.seed)
-    positions = cluster.build_cluster(config.num_particles)
+    kind = "icosahedral" if config.num_particles == 13 else "bcc"
+    positions = cluster.build_cluster(config.num_particles, kind=kind)
     _, pe0 = force_eval.compute(positions)
 
     ndof = 3 * config.num_particles - 3
@@ -110,6 +112,7 @@ def run_trajectory(
     frames: list[np.ndarray] = []
     frame_times: list[float] = []
     frame_temperatures: list[float] = []
+    frame_energies: list[float] = []
     last_temperature = 0.0
 
     equil_start = int(config.num_steps * config.equil_fraction)
@@ -156,6 +159,9 @@ def run_trajectory(
             frame_temperatures.append(
                 physics.temperature(physics.kinetic_energy(velocities), config.num_particles)
             )
+            frame_energies.append(
+                physics.kinetic_energy(velocities) + pe
+            )
 
         if progress and step % max(config.num_steps // 20, 1) == 0:
             progress(step, config.num_steps)
@@ -181,5 +187,6 @@ def run_trajectory(
         frames=frames,
         frame_times=frame_times,
         frame_temperatures=frame_temperatures,
+        frame_energies=frame_energies,
         wall_time=wall_time,
     )

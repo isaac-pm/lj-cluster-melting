@@ -43,11 +43,14 @@ python main.py --mode single       # one trajectory + HTML viewer
 # Single run: trajectory.json + outputs/cluster.html (drag to rotate, space to play)
 python main.py --mode single --energies -36 --steps 50000
 
-# Melting scan: 11 energies x 3 replicas, merged caloric curve
-python main.py --mode scan --energies -44.3 -40 -36 -32 -28 -24 --replicas 3
+# Melting scan: full 0.01-resolved sweep, merged caloric curve
+python main.py --mode scan --replicas 3
+
+# Custom energies / cluster size / timestep
+python main.py --mode scan --energies -43 -40 -36 --num-particles 13 --dt 0.005
 
 # Same scan on 8 cores (identical code path, master/worker split)
-mpiexec -n 8 python main.py --mode scan --energies -44.3 -40 -36 -32 -28 -24 --replicas 3
+mpiexec -n 8 python main.py --mode scan --energies -43 -40 -36 --replicas 3
 ```
 
 Outputs land in `outputs/`:

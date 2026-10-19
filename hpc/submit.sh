@@ -12,7 +12,7 @@
 #                   (1 master + N workers; one rank per energy/replica)
 #
 # Any sbatch options given here override the profile, for example:
-#   hpc/submit.sh cpu -t 08:00:00 -- --n-atoms 13
+#   hpc/submit.sh cpu -t 08:00:00 -- --num-particles 13
 #   hpc/submit.sh gpu -t 00:30:00 -J quick-test
 #   hpc/submit.sh --dry-run            # print the sbatch command only
 

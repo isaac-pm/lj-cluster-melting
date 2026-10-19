@@ -29,9 +29,9 @@ from lj.mpi_scan import run_scan, run_single
 # Scan window for the melting study, in the potential-shifted energy frame
 # (the Mackay minimum is E* ~ -44.3268 unshifted; the 2.5-sigma potential
 # shift moves it to ~ -43.05, so -43.0 is the coldest usable start).
-DEFAULT_ENERGIES = [
-    -43.0, -42.0, -40.0, -38.0, -36.0, -34.0, -32.0, -30.0, -28.0, -26.0, -24.0,
-]
+# Default resolution is 0.01 sigma_E across the full solid->liquid->vapour range.
+E_MIN, E_MAX, E_STEP = -43.0, -24.0, 0.01
+DEFAULT_ENERGIES = np.round(np.arange(E_MIN, E_MAX + E_STEP / 2, E_STEP), 2).tolist()
 
 
 def parse_args(argv=None) -> argparse.Namespace:
@@ -54,6 +54,12 @@ def parse_args(argv=None) -> argparse.Namespace:
     parser.add_argument("--replicas", type=int, default=3, help="runs per energy")
     parser.add_argument("--steps", type=int, default=100_000)
     parser.add_argument("--dt", type=float, default=0.005)
+    parser.add_argument(
+        "--num-particles",
+        type=int,
+        default=13,
+        help="cluster size N (13 -> Mackay icosahedron; other N use a BCC cluster)",
+    )
     parser.add_argument("--sample-every", type=int, default=200)
     parser.add_argument("--cutoff", type=float, default=2.5)
     parser.add_argument("--seed", type=int, default=20261017)
@@ -69,7 +75,7 @@ def parse_args(argv=None) -> argparse.Namespace:
 
 def build_config(args: argparse.Namespace) -> SimulationConfig:
     return SimulationConfig(
-        num_particles=13,
+        num_particles=args.num_particles,
         total_energy=args.energies[0],
         dt=args.dt,
         num_steps=args.steps,
@@ -108,10 +114,11 @@ def main(argv=None) -> int:
         return 0
 
     # scan mode: master distributes (energy, replica) items over MPI ranks
+    kind = "icosahedral" if args.num_particles == 13 else "bcc"
     print(
         f"scan: {len(args.energies)} energies x {args.replicas} replicas "
         f"= {len(args.energies) * args.replicas} runs, "
-        f"{args.steps} steps each"
+        f"{args.steps} steps each (N={args.num_particles}, {kind} cluster)"
     )
     results = run_scan(config, args.energies, args.replicas, args.outdir)
     if results is None:
