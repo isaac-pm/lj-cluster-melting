@@ -8,6 +8,10 @@ Single run with trajectory + viewer:
 
 Energy scan (one process per (energy, replica); scales with mpiexec):
 
+    python main.py --mode scan --start-energy -44.0 --end-energy -24.0 --de 0.5 \
+        --replicas 3 --steps 100000
+
+    # equivalent: explicit list
     python main.py --mode scan --energies -44.3 -40 -36 -32 -28 -24 \
         --replicas 3 --steps 100000
 
@@ -48,8 +52,20 @@ def parse_args(argv=None) -> argparse.Namespace:
         "--energies",
         type=float,
         nargs="+",
-        default=DEFAULT_ENERGIES,
-        help="total-energy windows for the scan (default: a preset melting sweep)",
+        default=None,
+        help="explicit total-energy windows for the scan (overrides start/end/de)",
+    )
+    parser.add_argument(
+        "--start-energy", type=float, default=None,
+        help="scan start energy E0 (e.g. -43.0, the Mackay minimum)",
+    )
+    parser.add_argument(
+        "--end-energy", type=float, default=None,
+        help="scan end energy E1 (inclusive, e.g. -24.0)",
+    )
+    parser.add_argument(
+        "--de", "--dE", dest="de", type=float,
+        help="energy step size dE for the start->end grid",
     )
     parser.add_argument("--replicas", type=int, default=3, help="runs per energy")
     parser.add_argument("--steps", type=int, default=100_000)
@@ -62,6 +78,14 @@ def parse_args(argv=None) -> argparse.Namespace:
     )
     parser.add_argument("--sample-every", type=int, default=200)
     parser.add_argument("--cutoff", type=float, default=2.5)
+    parser.add_argument(
+        "--sigma", type=float, default=1.0,
+        help="LJ length parameter (1 = reduced units; e.g. argon 3.405 A)",
+    )
+    parser.add_argument(
+        "--epsilon", type=float, default=1.0,
+        help="LJ well depth (1 = reduced units)",
+    )
     parser.add_argument("--seed", type=int, default=20261017)
     parser.add_argument("--outdir", default="outputs")
     parser.add_argument(
@@ -81,6 +105,8 @@ def build_config(args: argparse.Namespace) -> SimulationConfig:
         num_steps=args.steps,
         sample_every=args.sample_every,
         cutoff=args.cutoff,
+        sigma=args.sigma,
+        epsilon=args.epsilon,
         seed=args.seed,
         thermostat=None if args.thermostat == "none" else args.thermostat,
         target_temperature=args.target_temperature,
@@ -88,9 +114,54 @@ def build_config(args: argparse.Namespace) -> SimulationConfig:
     )
 
 
+def expand_energies(args: argparse.Namespace) -> list[float]:
+    """Resolve the CLI energy spec into the grid passed to run_scan.
+
+    Priority: explicit --energies list > --start/--end/--de grid >
+    preset default sweep (E_MIN..E_MAX at E_STEP).
+    """
+    if args.energies:
+        return args.energies
+    if args.start_energy is not None and args.end_energy is not None:
+        de = args.de if args.de is not None else E_STEP
+        if de <= 0:
+            raise SystemExit("--de must be positive")
+        up = args.end_energy >= args.start_energy
+        # include the endpoint; float-safe rounding (powers of 0.01 etc.)
+        eps = 1e-9 * de
+        span = np.arange(
+            args.start_energy,
+            args.end_energy + (de / 2 if up else -de / 2) + (eps if up else -eps),
+            de,
+        )
+        return np.round(span, 8).tolist()
+    if args.de is not None:
+        raise SystemExit("--de needs --start-energy and --end-energy")
+    return DEFAULT_ENERGIES
+
+
+def _mpi_rank() -> int:
+    """Rank of this process under MPI (0 when serial or mpi4py missing)."""
+    try:
+        from mpi4py import MPI
+    except ImportError:
+        return 0
+    return MPI.COMM_WORLD.rank
+
+
+def n_ranks() -> int:
+    try:
+        from mpi4py import MPI
+    except ImportError:
+        return 1
+    return MPI.COMM_WORLD.size
+
+
 def main(argv=None) -> int:
     args = parse_args(argv)
+    args.energies = expand_energies(args)
     config = build_config(args)
+    rank = _mpi_rank()
 
     started = time.perf_counter()
     if args.mode == "single":
@@ -115,14 +186,17 @@ def main(argv=None) -> int:
 
     # scan mode: master distributes (energy, replica) items over MPI ranks
     kind = "icosahedral" if args.num_particles == 13 else "bcc"
-    print(
-        f"scan: {len(args.energies)} energies x {args.replicas} replicas "
-        f"= {len(args.energies) * args.replicas} runs, "
-        f"{args.steps} steps each (N={args.num_particles}, {kind} cluster)"
-    )
+    if rank == 0:              # banner only once: identical per-rank banners
+        print(                 # make the scan log look like duplicate work
+            f"scan [rank 0 of {n_ranks()}]: {len(args.energies)} energies "
+            f"x {args.replicas} replicas = {len(args.energies) * args.replicas} "
+            f"runs, {args.steps} steps each (N={args.num_particles}, {kind})"
+        )
     results = run_scan(config, args.energies, args.replicas, args.outdir)
     if results is None:
         return 0  # MPI worker
+    if rank != 0:
+        return 0
     ok = [r for r in results if r.get("ok")]
     failed = len(results) - len(ok)
     print(

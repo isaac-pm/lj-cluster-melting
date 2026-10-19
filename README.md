@@ -49,6 +49,12 @@ python main.py --mode scan --replicas 3
 # Custom energies / cluster size / timestep
 python main.py --mode scan --energies -43 -40 -36 --num-particles 13 --dt 0.005
 
+# Or: start/end energy grid with a dE step size (endpoint included)
+python main.py --mode scan --start-energy -43.0 --end-energy -30.0 --de 0.5 --replicas 3
+
+# Physical LJ parameters (e.g. argon-like): lengths in sigma, energies in epsilon
+python main.py --mode single --start-energy -36 --steps 50000 --sigma 2.0 --epsilon 3.0
+
 # Same scan on 8 cores (identical code path, master/worker split)
 mpiexec -n 8 python main.py --mode scan --energies -43 -40 -36 --replicas 3
 ```
@@ -57,7 +63,7 @@ Outputs land in `outputs/`:
 
 | mode    | files                                                                                          |
 | ------- | ---------------------------------------------------------------------------------------------- |
-| single  | `trajectory.json`, `cluster.html` (self-contained CSS 3D viewer, works from `file://`)        |
+| single  | `trajectory.json`, `cluster.html` (self-contained CSS 3D viewer with a live in-browser velocity-Verlet MD panel that anneals the cluster from `E_0` to `E_1`, works from `file://`) |
 | scan    | `merged.json`, `caloric.csv`, `caloric.png`, `summary.json`, `per_run/e*_r*.csv`               |
 
 `summary.json` reports the transition markers: the heat-capacity peak C = dE/dT and the Lindemann 0.1 crossing (finite-resolution estimates — see design notes).

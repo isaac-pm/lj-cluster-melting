@@ -90,11 +90,11 @@ def run_trajectory(
     potential energy of the initial configuration.
     """
     if force_eval is None:
-        force_eval = SerialForces(config.cutoff)
+        force_eval = SerialForces(config.cutoff, config.sigma, config.epsilon)
 
     rng = np.random.default_rng(config.seed)
     kind = "icosahedral" if config.num_particles == 13 else "bcc"
-    positions = cluster.build_cluster(config.num_particles, kind=kind)
+    positions = cluster.build_cluster(config.num_particles, kind=kind, sigma=config.sigma)
     _, pe0 = force_eval.compute(positions)
 
     ndof = 3 * config.num_particles - 3
@@ -106,7 +106,8 @@ def run_trajectory(
     velocities = cluster.rescale_to_total_energy(velocities, pe0, config.total_energy)
 
     forces, pe = force_eval.compute(positions)
-    lindemann = LindemannAccumulator(positions)
+    # bond cutoff 1.5 * sigma (visualisation and Lindemann accumulator agree)
+    lindemann = LindemannAccumulator(positions, bond_cutoff=1.5 * config.sigma)
 
     samples: dict[str, list[float]] = {k: [] for k in OBSERVABLES}
     frames: list[np.ndarray] = []

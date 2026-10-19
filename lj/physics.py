@@ -2,10 +2,11 @@
 
 All functions are vectorised NumPy and use a potential-shifted cutoff:
 
-    U(r) = 4 * [(1/r)^12 - (1/r)^6] - U(rc)   for r < rc, else 0.
+    U(r) = 4 * eps * [(sigma/r)^12 - (sigma/r)^6] - U(rc)   for r < rc, else 0.
 
 The shift makes the potential continuous at rc (standard practice, e.g.
 GROMACS), at the cost of a small force discontinuity at the cutoff.
+Reduced units are the sigma = eps = 1 special case.
 """
 
 from __future__ import annotations
@@ -32,11 +33,15 @@ class ForceEvaluator:
 class SerialForces(ForceEvaluator):
     """Reference all-pairs evaluator. O(N^2) per step, exact."""
 
-    def __init__(self, cutoff: float = 2.5):
+    def __init__(self, cutoff: float = 2.5, sigma: float = 1.0, epsilon: float = 1.0):
         self.cutoff = float(cutoff)
+        self.sigma = float(sigma)
+        self.epsilon = float(epsilon)
 
     def compute(self, positions: np.ndarray) -> tuple[np.ndarray, float]:
-        return lj_energy_and_forces(positions, self.cutoff)
+        return lj_energy_and_forces(
+            positions, self.cutoff, self.sigma, self.epsilon
+        )
 
 
 class AtomDecomposedForces(ForceEvaluator):
@@ -52,8 +57,12 @@ class AtomDecomposedForces(ForceEvaluator):
     right tool instead.
     """
 
-    def __init__(self, cutoff: float = 2.5, comm=None):
+    def __init__(
+        self, cutoff: float = 2.5, sigma: float = 1.0, epsilon: float = 1.0, comm=None
+    ):
         self.cutoff = float(cutoff)
+        self.sigma = float(sigma)
+        self.epsilon = float(epsilon)
         self.comm = comm
         self.rank = comm.rank if comm is not None else 0
         self.size = comm.size if comm is not None else 1
@@ -69,19 +78,23 @@ class AtomDecomposedForces(ForceEvaluator):
         delta = positions[owned, None, :] - positions[None, :, :]  # (n_owned, N, 3)
         r2 = np.einsum("ijk,ijk->ij", delta, delta)
         r2[np.arange(len(owned)), owned] = np.inf  # exclude self-interaction
-        rc2 = self.cutoff**2
+        rc2 = (self.cutoff * self.sigma) ** 2
         inside = r2 < rc2
 
-        inv_r2 = np.zeros_like(r2)
-        np.divide(1.0, r2, out=inv_r2, where=inside)
-        inv_r6 = inv_r2**3
-        inv_r12 = inv_r6**2
+        sigma2 = self.sigma**2
+        q2 = np.zeros_like(r2)               # (sigma/r)^2 inside cutoff
+        np.divide(sigma2, r2, out=q2, where=inside)
+        q6 = q2**3
+        q12 = q6**2
+        qs2 = sigma2 / rc2                   # (sigma/rc)^2
 
-        u = np.where(inside, 4.0 * (inv_r12 - inv_r6), 0.0)
-        u_shift = 4.0 * (rc2**-6 - rc2**-3)
+        u = 4.0 * self.epsilon * (q12 - q6)
+        u_shift = 4.0 * self.epsilon * (qs2**6 - qs2**3)
         pe_local = 0.5 * float(np.sum(u - np.where(inside, u_shift, 0.0)))
 
-        f_mag = np.where(inside, 24.0 * (2.0 * inv_r12 - inv_r6) * inv_r2, 0.0)
+        f_mag = np.where(
+            inside, 24.0 * self.epsilon * (2.0 * q12 - q6) / r2, 0.0
+        )
         forces = np.zeros_like(positions)
         forces[owned] = np.einsum("ij,ijk->ik", f_mag, delta)
 
@@ -94,45 +107,58 @@ class AtomDecomposedForces(ForceEvaluator):
 
 
 def lj_energy_and_forces(
-    positions: np.ndarray, cutoff: float = 2.5
+    positions: np.ndarray,
+    cutoff: float = 2.5,
+    sigma: float = 1.0,
+    epsilon: float = 1.0,
 ) -> tuple[np.ndarray, float]:
     """Full all-pairs forces and potential energy of an LJ configuration."""
     positions = np.asarray(positions, dtype=float)
     delta = positions[:, None, :] - positions[None, :, :]  # (N, N, 3)
     r2 = np.einsum("ijk,ijk->ij", delta, delta)
     np.fill_diagonal(r2, np.inf)  # exclude self-interaction
-    rc2 = cutoff * cutoff
+    rc2 = (cutoff * sigma) ** 2      # cutoff in units of sigma
     inside = r2 < rc2
 
-    inv_r2 = np.zeros_like(r2)
-    np.divide(1.0, r2, out=inv_r2, where=inside)
-    inv_r6 = inv_r2**3
-    inv_r12 = inv_r6**2
+    # (sigma/r)^2 inside the cutoff; q6/q12 are the usual sigma/r powers
+    sigma2 = sigma * sigma
+    q2 = np.zeros_like(r2)
+    np.divide(sigma2, r2, out=q2, where=inside)
+    q6 = q2**3
+    q12 = q6**2
+    qs2 = sigma2 / rc2  # (sigma/rc)^2 for the cutoff shift
 
-    u_shift = 4.0 * (rc2**-6 - rc2**-3)
-    u = np.where(inside, 4.0 * (inv_r12 - inv_r6) - u_shift, 0.0)
+    u_shift = 4.0 * epsilon * (qs2**6 - qs2**3)
+    u = np.where(inside, 4.0 * epsilon * (q12 - q6) - u_shift, 0.0)
     pe = 0.5 * float(u.sum())
 
-    # F_i = sum_j 24 (2/r_ij^12 - 1_ij^6) * r_vec_ij / r_ij^2
-    f_mag = np.where(inside, 24.0 * (2.0 * inv_r12 - inv_r6) * inv_r2, 0.0)
+    # F_i = sum_j 24 eps (2 (sigma/r)^12 - (sigma/r)^6) r_vec_ij / r_ij^2
+    f_mag = np.where(inside, 24.0 * epsilon * (2.0 * q12 - q6) / r2, 0.0)
     forces = np.einsum("ij,ijk->ik", f_mag, delta)
     return forces, pe
 
 
-def per_atom_energy(positions: np.ndarray, cutoff: float = 2.5) -> np.ndarray:
+def per_atom_energy(
+    positions: np.ndarray,
+    cutoff: float = 2.5,
+    sigma: float = 1.0,
+    epsilon: float = 1.0,
+) -> np.ndarray:
     """Potential energy of each atom (half of each pair, summed)."""
     positions = np.asarray(positions, dtype=float)
     delta = positions[:, None, :] - positions[None, :, :]
     r2 = np.einsum("ijk,ijk->ij", delta, delta)
     np.fill_diagonal(r2, np.inf)
-    rc2 = cutoff * cutoff
+    rc2 = (cutoff * sigma) ** 2
     inside = r2 < rc2
-    inv_r2 = np.zeros_like(r2)
-    np.divide(1.0, r2, out=inv_r2, where=inside)
-    inv_r6 = inv_r2**3
-    inv_r12 = inv_r6**2
-    u_shift = 4.0 * (rc2**-6 - rc2**-3)
-    u = np.where(inside, 4.0 * (inv_r12 - inv_r6) - u_shift, 0.0)
+    sigma2 = sigma * sigma
+    q2 = np.zeros_like(r2)
+    np.divide(sigma2, r2, out=q2, where=inside)
+    q6 = q2**3
+    q12 = q6**2
+    qs2 = sigma2 / rc2
+    u_shift = 4.0 * epsilon * (qs2**6 - qs2**3)
+    u = np.where(inside, 4.0 * epsilon * (q12 - q6) - u_shift, 0.0)
     return 0.5 * u.sum(axis=1)
 
 

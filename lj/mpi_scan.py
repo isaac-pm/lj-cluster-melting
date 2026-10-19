@@ -56,11 +56,36 @@ def build_work_items(
     return items
 
 
+def _mpi_launched() -> bool:
+    """Running under mpiexec/Slurm even when mpi4py failed to import."""
+    return any(
+        key in os.environ
+        for key in (
+            "PMI_RANK", "PMI_SIZE", "PMIX_RANK", "PMIX_NAMESPACE",
+            "OMPI_COMM_WORLD_RANK", "MV2_RANK", "ALPS_APP_PES",
+        )
+    )
+
+
 def _get_comm():
-    """Return MPI.COMM_WORLD, or None when mpi4py is unavailable or size 1."""
+    """Return MPI.COMM_WORLD, or None when mpi4py is unavailable or size 1.
+
+    Refuses the dangerous silent case: launched by mpiexec/Slurm *without*
+    mpi4py, every rank would then fall back to running the full scan
+    itself — all ranks doing identical work, N x slower, racing each
+    other's output files.
+    """
     try:
         from mpi4py import MPI
     except ImportError:
+        if _mpi_launched():
+            raise RuntimeError(
+                "launched under mpiexec/Slurm but mpi4py is not importable; "
+                "every rank would repeat the whole scan (no speed-up). "
+                "Install mpi4py in the job environment "
+                "(conda install -c conda-forge mpi4py, see setup_env.sh) "
+                "or run serially without mpiexec."
+            )
         return None
     comm = MPI.COMM_WORLD
     return comm if comm.size > 1 else None
@@ -102,7 +127,7 @@ def _run_serial(items: list[WorkItem], config: SimulationConfig, outdir: str) ->
     for item_index, item in enumerate(items):
         run_config = replace(config, total_energy=item.total_energy, seed=item.seed)
         try:
-            result = run_trajectory(run_config, force_eval=SerialForces(run_config.cutoff))
+            result = run_trajectory(run_config, force_eval=SerialForces(run_config.cutoff, run_config.sigma, run_config.epsilon))
             payload = _result_payload(result, item, item_index)
             results.append(payload)
             _write_per_run_csv(os.path.join(outdir, "per_run"), item, {"result": payload})
@@ -187,9 +212,16 @@ def _worker(items: list[WorkItem], config: SimulationConfig, comm) -> None:
         if received[0] == "stop":
             return
         _, idx, work = received
+        # visible proof of specialisation in the job log: each rank runs a
+        # *different* (energy, replica) item, handed out by rank 0
+        print(
+            f"  [rank {comm.rank}] E={work.total_energy:.3f} "
+            f"replica {work.replica}",
+            flush=True,
+        )
         run_config = replace(config, total_energy=work.total_energy, seed=work.seed)
         try:
-            result = run_trajectory(run_config, force_eval=SerialForces(run_config.cutoff))
+            result = run_trajectory(run_config, force_eval=SerialForces(run_config.cutoff, run_config.sigma, run_config.epsilon))
             comm.send(
                 {
                     "worker": comm.rank,
@@ -280,7 +312,7 @@ def run_single(
     comm = _get_comm()
     if comm is not None and comm.rank != 0:
         return None
-    result = run_trajectory(config, force_eval=SerialForces(config.cutoff))
+    result = run_trajectory(config, force_eval=SerialForces(config.cutoff, config.sigma, config.epsilon))
     if dump_trajectory:
         from .visualize import write_trajectory_outputs
 

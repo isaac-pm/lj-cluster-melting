@@ -20,7 +20,7 @@ def icosahedron_surface() -> np.ndarray:
     return vertices / np.linalg.norm(vertices, axis=1, keepdims=True)
 
 
-def mackay_icosahedron() -> np.ndarray:
+def mackay_icosahedron(sigma: float = 1.0) -> np.ndarray:
     """Positions of the LJ-13 Mackay icosahedron (the global minimum).
 
     One atom at the centre plus the 12 icosahedral vertices. The global
@@ -28,7 +28,8 @@ def mackay_icosahedron() -> np.ndarray:
     shorter than the pair minimum 2**(1/6) (compressing the surface lets
     the centre and diagonal pairs gain more than the edges lose), so we
     minimise the total energy over the global scale with a golden-section
-    search. The resulting energy is E* ~ -44.3268.
+    search. The resulting energy is E* ~ -44.3268 (in epsilon, unshifted
+    at a 10-sigma cutoff; sigma = 1 gives the fully reduced geometry).
     """
     from .physics import lj_energy_and_forces
 
@@ -36,10 +37,12 @@ def mackay_icosahedron() -> np.ndarray:
     delta = surface[:, None, :] - surface[None, :, :]
     distances = np.linalg.norm(delta, axis=-1)
     edge = distances[distances > 1e-12].min()
-    unit = np.vstack([np.zeros((1, 3)), surface * (LJ_MIN_DISTANCE / edge)])
+    unit = np.vstack([np.zeros((1, 3)), surface * (LJ_MIN_DISTANCE * sigma / edge)])
 
     def energy(scale: float) -> float:
-        return lj_energy_and_forces(unit * scale, cutoff=10.0)[1]
+        return lj_energy_and_forces(
+            unit * scale, cutoff=10.0 * sigma, sigma=sigma
+        )[1]
 
     # golden-section search for the energy-minimising scale
     lo, hi = 0.97, 1.10
@@ -92,14 +95,18 @@ def bcc_lattice_sites(num_particles: int, lattice_constant: float | None = None)
     return positions - positions.mean(axis=0)
 
 
-def build_cluster(num_particles: int, kind: str = "icosahedral") -> np.ndarray:
+def build_cluster(
+    num_particles: int, kind: str = "icosahedral", sigma: float = 1.0
+) -> np.ndarray:
     """Initial positions (N, 3) with the centre of mass at the origin."""
     if kind == "icosahedral":
         if num_particles != 13:
             raise ValueError("icosahedral builder is exact for N=13 only")
-        return mackay_icosahedron()
+        return mackay_icosahedron(sigma)
     if kind == "bcc":
-        return bcc_lattice_sites(num_particles)
+        return bcc_lattice_sites(
+            num_particles, lattice_constant=LJ_MIN_DISTANCE * sigma * 2.0 / np.sqrt(3.0)
+        )
     raise ValueError(f"unknown cluster kind {kind!r}")
 
 

@@ -4,3 +4,4 @@ outputs/
 logs/*
 !logs/.gitkeep
 .pytest_cache/
+hpc/generated/

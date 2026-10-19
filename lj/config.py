@@ -24,6 +24,12 @@ class SimulationConfig:
         trajectory_every: store full positions every this many steps.
             Set to 0 to skip trajectory output entirely (scan mode).
         cutoff: LJ cutoff in sigma, potential-shifted.
+        sigma: Lennard-Jones length parameter (in the coordinate units used
+            by ``build_cluster``/inputs; 1 = fully reduced units). Setting
+            sigma != 1 rescales lengths: dynamics are equivalent to the
+            reduced-unit run with all coordinates rescaled by 1/sigma.
+        epsilon: Lennard-Jones well depth (energy unit; 1 = reduced). All
+            temperatures and energies scale by epsilon.
         seed: RNG seed; None picks one from OS entropy.
         thermostat: None for NVE, or "berendsen" for NVT.
         target_temperature: NVT target T* (required for berendsen).
@@ -41,6 +47,8 @@ class SimulationConfig:
     sample_every: int = 200
     trajectory_every: int = 0
     cutoff: float = 2.5
+    sigma: float = 1.0
+    epsilon: float = 1.0
     seed: int | None = None
     thermostat: str | None = None
     target_temperature: float | None = None
@@ -57,6 +65,8 @@ class SimulationConfig:
             raise ValueError("num_steps must be >= 1")
         if self.cutoff <= 1.0:
             raise ValueError("cutoff must be larger than 1 sigma")
+        if self.sigma <= 0.0 or self.epsilon <= 0.0:
+            raise ValueError("sigma and epsilon must be positive")
         if self.sample_every < 1 or self.trajectory_every < 0:
             raise ValueError("sample_every must be >= 1 and trajectory_every >= 0")
         if self.thermostat not in (None, "berendsen"):
