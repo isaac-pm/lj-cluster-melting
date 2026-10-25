@@ -144,14 +144,8 @@ if [[ -n $RANKS ]]; then
 elif [[ -n $NODES ]]; then
     NTASKS=$((NODES * CORES_PER_NODE))
 else
-    # single mode is ONE trajectory: extra ranks would be idle (workers exit
-    # immediately), so book the master core only unless ranks were forced
-    if [[ $MODE == single ]]; then
-        NTASKS=1
-    else
-        NODES=$(( (RUNS + 1 + CORES_PER_NODE - 1) / CORES_PER_NODE ))   # +1 master
-        NTASKS=$((NODES * CORES_PER_NODE))
-    fi
+    NODES=$(( (RUNS + 1 + CORES_PER_NODE - 1) / CORES_PER_NODE ))   # +1 master
+    NTASKS=$((NODES * CORES_PER_NODE))
 fi
 (( NTASKS >= 1 )) || die "need at least one rank"
 
@@ -182,6 +176,8 @@ OUT="$REPO_DIR/hpc/generated/$NAME-$(date +%H%M%S).sbatch"
     echo "#SBATCH --job-name=$NAME"
     echo "#SBATCH --partition=$PARTITION"
     echo "#SBATCH --qos=$QOS"
+    echo "#SBATCH --output=slurm_out/$NAME-%j.out"
+    echo "#SBATCH --error=slurm_err/$NAME-%j.err"
     echo "#SBATCH --nodes=${NODES:-1}"
     echo "#SBATCH --ntasks=$NTASKS"
     echo '#SBATCH --cpus-per-task=1'
@@ -193,13 +189,14 @@ set -euo pipefail
 cd "\$SLURM_SUBMIT_DIR"
 
 ENV_NAME=$ENV_NAME
-if [[ -z \${CONDA_ROOT:-} ]]; then
-    for dir in "\$HOME/miniforge3" "\$HOME/miniconda3" "\$HOME/anaconda3"; do
-        [[ -x \$dir/bin/conda ]] && CONDA_ROOT=\$dir && break
-    done
-fi
-: "\${CONDA_ROOT:?no conda found, run setup_env.sh first}"
-set +u; source "\$CONDA_ROOT/etc/profile.d/conda.sh"; conda activate "\$ENV_NAME"; set -u
+module load lang/Python/3.11.5-GCCcore-13.2.0
+module load toolchain/foss/2023b
+python3 -m venv lj-cluster
+
+source lj-cluster/bin/activate
+
+pip3 install -r requirements.txt
+pip3 install mpi4py
 
 export OMP_NUM_THREADS=\${OMP_NUM_THREADS:-1}
 export OPENBLAS_NUM_THREADS=\$OMP_NUM_THREADS
