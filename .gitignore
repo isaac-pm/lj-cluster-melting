@@ -5,3 +5,5 @@ logs/*
 !logs/.gitkeep
 .pytest_cache/
 hpc/generated/
+lj-cluster/
+
