@@ -111,46 +111,21 @@ _TEMPLATE = r"""<!DOCTYPE html>
   }
   #hud b { color: #e6edf3; font-weight: 600; font-variant-numeric: tabular-nums; }
 
-  /* vertical energy axis on the left */
-  #energyAxis {
-    position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
-    display: flex; flex-direction: column; align-items: center; gap: 8px;
-    background: rgba(13, 17, 23, 0.72); border: 1px solid #21262d;
-    border-radius: 8px; padding: 8px 4px; pointer-events: auto;
-  }
-  #energyAxis .elabel { font-size: 10px; color: #8b949e; text-align: center; }
-  #energyAxis .etitle { font-size: 9px; color: #8b949e; writing-mode: vertical-lr; }
-  #energySlider {
-    writing-mode: vertical-lr; direction: rtl;
-    -webkit-appearance: none; appearance: none;
-    width: 220px; height: 6px; border-radius: 3px;
-    background: linear-gradient(90deg, #58a6ff, #d29922 60%, #f778ba);
-    cursor: pointer; transform: rotate(-90deg); margin: 107px 0;
-  }
-  #energySlider::-webkit-slider-thumb {
-    -webkit-appearance: none; appearance: none;
-    width: 14px; height: 14px; border-radius: 50%;
-    background: #e6edf3; border: 2px solid #58a6ff;
-  }
-  #energySlider::-moz-range-thumb {
-    width: 12px; height: 12px; border-radius: 50%;
-    background: #e6edf3; border: 2px solid #58a6ff;
-  }
-  #energyReadout { font-size: 9px; color: #e6edf3; text-align: center;
-                    font-variant-numeric: tabular-nums; line-height: 1.3; }
-
   /* velocity-Verlet MD run controls */
   #mdPanel {
     position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
     display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center;
     background: rgba(13, 17, 23, 0.78); border: 1px solid #21262d;
     border-radius: 8px; padding: 6px 10px; font-size: 11px; color: #8b949e;
+    pointer-events: auto; z-index: 20; touch-action: manipulation;
   }
   #mdPanel input[type="number"] {
     width: 58px; background: #21262d; color: #e6edf3;
     border: 1px solid #30363d; border-radius: 4px; padding: 2px 4px;
     font: inherit; font-variant-numeric: tabular-nums;
   }
+    #mdPanel select { background: #21262d; color: #e6edf3; border: 1px solid #30363d;
+                      border-radius: 4px; padding: 2px 4px; font: inherit; }
   #mdPanel button { background: #1f6feb; border: 1px solid #388bfd; color: #e6edf3;
                     border-radius: 4px; padding: 2px 10px; font: inherit; cursor: pointer; }
   #mdPanel button:hover { background: #388bfd; }
@@ -171,29 +146,15 @@ _TEMPLATE = r"""<!DOCTYPE html>
   }
 
   #chart { position: absolute; bottom: 12px; right: 12px; background: rgba(13, 17, 23, 0.72);
-           border: 1px solid #21262d; border-radius: 8px; padding: 6px; }
+           border: 1px solid #21262d; border-radius: 8px; padding: 6px;
+           pointer-events: none; z-index: 10; }
   #chart canvas { display: block; }
+  #potentialChart { position: absolute; bottom: 12px; left: 12px;
+                    background: rgba(13, 17, 23, 0.72);
+                    border: 1px solid #21262d; border-radius: 8px; padding: 6px;
+                    pointer-events: none; z-index: 10; }
+  #potentialChart canvas { display: block; }
 
-  /* ramp toggles under the energy axis */
-  #energyAxis label.toggle { font-size: 9px; }
-  #rampDuration { width: 44px; font-size: 10px; background: #21262d; color: #e6edf3;
-                   border: 1px solid #30363d; border-radius: 4px; padding: 1px 3px; }
-
-  #controls {
-    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-    padding: 10px 16px; border-top: 1px solid #21262d;
-  }
-  button, select {
-    background: #21262d; color: #e6edf3; border: 1px solid #30363d;
-    border-radius: 6px; padding: 5px 12px; font: inherit; font-size: 13px;
-  }
-  button:hover, select:hover { background: #30363d; }
-  button { min-width: 74px; }
-  input[type="range"] { flex: 1; min-width: 180px; accent-color: #58a6ff; }
-  label.toggle { display: flex; align-items: center; gap: 6px;
-                 color: #8b949e; font-size: 12px; user-select: none; }
-  #tlabel { font-variant-numeric: tabular-nums; color: #8b949e;
-            font-size: 12px; min-width: 170px; }
 </style>
 </head>
 <body>
@@ -212,45 +173,18 @@ _TEMPLATE = r"""<!DOCTYPE html>
   <div id="hud"></div>
   <div id="mdPanel">
     <span>MD (velocity Verlet)</span>
-    <label>E₀ <input type="number" id="mdStart" value="-43.0" step="0.1"></label>
-    <label>E₁ <input type="number" id="mdTarget" value="-24.0" step="0.5" title="hot enough that the superheated icosahedron melts during the NVE hold; -24 shows a bound melt, hotter ones also evaporate"></label>
-    <label>dt <input type="number" id="mdDt" value="0.005" step="0.001" min="0.001" max="0.02"></label>
+    <label>dt <input type="number" id="mdDt" value="0.0005" step="0.0001" min="0.0001" max="0.002"></label>
     <label>ramp <input type="number" id="mdRamp" value="20000" step="1000" min="500"> steps</label>
-    <button id="mdRun">Run</button>
-    <button id="mdClear" class="secondary">reset</button>
+    <label>speed <select id="mdSpeed">
+      <option value="1">1x</option><option value="2">2x</option>
+      <option value="4" selected>4x</option><option value="8">8x</option>
+    </select></label>
+    <button id="mdRun" type="button">Heat from minimum</button>
+    <button id="mdClear" class="secondary" type="button">reset</button>
     <span id="mdStatus"></span>
   </div>
-  <div id="energyAxis">
-    <span class="etitle">ENERGY</span>
-    <input id="energySlider" type="range" step="0.01">
-    <span id="energyReadout"></span>
-    <label class="toggle"><input type="checkbox" id="rampChk"> heat ramp</label>
-    <label class="toggle"><input type="checkbox" id="rampLoop"> loop</label>
-    <label class="toggle">&Delta;t <input type="number" id="rampDuration" value="20" min="2" max="300"> s</label>
-  </div>
   <div id="chart"><canvas id="chartCanvas" width="360" height="140"></canvas></div>
-</div>
-
-<div id="controls">
-  <button id="play" type="button">Play</button>
-  <input id="scrub" type="range" min="0" value="0" step="1">
-  <span id="tlabel"></span>
-  <select id="speed" title="playback speed">
-    <option value="1">1&times;</option>
-    <option value="2">2&times;</option>
-    <option value="4" selected>4&times;</option>
-    <option value="8">8&times;</option>
-  </select>
-  <label class="toggle"><input type="checkbox" id="bonds" checked> bonds</label>
-  <label class="toggle"><input type="checkbox" id="floorchk" checked> floor</label>
-  <label class="toggle"><input type="checkbox" id="spin"> auto-rotate</label>
-  <label class="toggle"><input type="checkbox" id="confineChk"> confine</label>
-  <select id="colormode" title="atom colour">
-    <option value="uniform">uniform colour</option>
-    <option value="pe" selected>local potential energy</option>
-    <option value="energy">energy axis (melting)</option>
-  </select>
-  <button id="reset" type="button">reset view</button>
+  <div id="potentialChart"><canvas id="potentialCanvas" width="360" height="140"></canvas></div>
 </div>
 
 <script>
@@ -267,26 +201,14 @@ const floor     = document.getElementById("floor");
 const shadow    = document.getElementById("shadow");
 const pool      = document.getElementById("pool");
 const hud       = document.getElementById("hud");
-const playBtn   = document.getElementById("play");
-const scrub     = document.getElementById("scrub");
-const tlabel    = document.getElementById("tlabel");
-const speedSel  = document.getElementById("speed");
-const bondsChk  = document.getElementById("bonds");
-const floorChk  = document.getElementById("floorchk");
-const confineChk = document.getElementById("confineChk");
 const boundaryEl = document.getElementById("boundary");
 
 // spherical confinement: atoms bounce off a wall of radius R_CONF (sigma)
 const R_CONF = 10;                 // confinement radius
 const R_CONF2 = R_CONF * R_CONF;    // squared, for fast distance checks
-const spinChk   = document.getElementById("spin");
-const colorSel  = document.getElementById("colormode");
-const energySlider = document.getElementById("energySlider");
-const energyReadout = document.getElementById("energyReadout");
-const rampChk = document.getElementById("rampChk");
-const rampLoop = document.getElementById("rampLoop");
-const rampDuration = document.getElementById("rampDuration");
-const resetBtn  = document.getElementById("reset");
+const bondsEnabled = true;
+const floorEnabled = true;
+const confineEnabled = false;
 
 // ---------------------------------------------------------------- MD engine
 // Real Lennard-Jones molecular dynamics in the browser: potential-shifted
@@ -303,6 +225,12 @@ const LJ_EPS = (DATA.meta && DATA.meta.epsilon) || 1.0;
 const LJ_RC2 = LJ_RC * LJ_RC;
 const U_SHIFT = 4.0 * LJ_EPS *
   (Math.pow(LJ_SIGMA / LJ_RC, 12) - Math.pow(LJ_SIGMA / LJ_RC, 6));
+// A browser animation can step through a very close encounter when a hot
+// cluster evaporates. Limit only pathological pair forces to prevent the
+// singular LJ core from turning one missed collision into Inf/NaN.
+const LJ_CORE_R = 0.70 * LJ_SIGMA;
+const LJ_CORE_R2 = LJ_CORE_R * LJ_CORE_R;
+const LJ_FORCE_CAP = 1200 * LJ_EPS / (LJ_SIGMA * LJ_SIGMA);
 
 // Mackay icosahedron vertices (unit circumradius), N = 13
 function icosahedronVertices() {
@@ -362,14 +290,17 @@ function ljForces(pos) {
       const dx = pos[i][0] - pos[j][0];
       const dy = pos[i][1] - pos[j][1];
       const dz = pos[i][2] - pos[j][2];
-      const r2 = dx * dx + dy * dy + dz * dz;
+      const rawR2 = dx * dx + dy * dy + dz * dz;
+      const r2 = Math.max(rawR2, LJ_CORE_R2);
       if (r2 >= LJ_RC2) continue;
       const q2 = LJ_SIGMA * LJ_SIGMA / r2;   // (sigma/r)^2
       const q6 = q2 * q2 * q2;
       const q12 = q6 * q6;
       const u = 4 * LJ_EPS * (q12 - q6) - U_SHIFT;
       pe += u;
-      const fMag = 24 * LJ_EPS * (2 * q12 - q6) / r2;
+      const rawFMag = 24 * LJ_EPS * (2 * q12 - q6) / r2;
+      const fMag = Math.max(-LJ_FORCE_CAP,
+                            Math.min(LJ_FORCE_CAP, rawFMag));
       forces[i][0] += fMag * dx; forces[i][1] += fMag * dy; forces[i][2] += fMag * dz;
       forces[j][0] -= fMag * dx; forces[j][1] -= fMag * dy; forces[j][2] -= fMag * dz;
     }
@@ -419,10 +350,9 @@ function rescaleToEnergy(pos, vel, pe, eTarget) {
 
 // MD run state
 const mdPanel = document.getElementById("mdPanel");
-const mdStart = document.getElementById("mdStart");
-const mdTarget = document.getElementById("mdTarget");
 const mdDt = document.getElementById("mdDt");
 const mdRamp = document.getElementById("mdRamp");
+const mdSpeed = document.getElementById("mdSpeed");
 const mdRun = document.getElementById("mdRun");
 const mdClear = document.getElementById("mdClear");
 const mdStatus = document.getElementById("mdStatus");
@@ -432,10 +362,20 @@ let mdActive = false;          // a live MD state exists and owns the viewport
 let mdPos = null, mdVel = null, mdForces = null, mdPe = 0;
 let mdFlat = null;             // live positions as a flat array for the renderer
 let mdStepCount = 0;
+
+// The viewport uses pointer capture for drag-rotation. Keep form controls from
+// being captured by that handler so their native click/change events fire.
+// Keep the overlay separate from the viewport drag gesture without stopping
+// clicks before they reach the button target.
+for (const type of ["pointerdown", "pointerup"]) {
+  mdPanel.addEventListener(type, e => e.stopPropagation(), true);
+}
+mdPanel.addEventListener("click", e => e.stopPropagation());
 let mdE0 = 0, mdE1 = 0;
-let mdDtVal = 0.005, mdRampSteps = 5000;
+let mdDtVal = 0.0005, mdRampSteps = 5000;
 let mdRampTarget = 0;          // current annealed total-energy setpoint
 let mdRampF = 0;               // ramp progress 0..1
+let mdExternalTarget = false;  // energy slider/ramp controls the setpoint
 let mdLive = null;             // live observables for HUD / chart / readout
 let mdLiveHue = null;          // per-atom colour from live local PE
 let mdSamples = [];            // recorded (E, T) samples along the ramp
@@ -482,7 +422,7 @@ function perAtomPE(pos) {
       const dx = pos[i][0] - pos[j][0];
       const dy = pos[i][1] - pos[j][1];
       const dz = pos[i][2] - pos[j][2];
-      const r2 = dx * dx + dy * dy + dz * dz;
+      const r2 = Math.max(dx * dx + dy * dy + dz * dz, LJ_CORE_R2);
       if (r2 >= LJ_RC2) continue;
       const inv_r2 = 1 / r2;
       const inv_r6 = inv_r2 * inv_r2 * inv_r2;
@@ -547,14 +487,46 @@ function lindemannIndex() {
   return acc / mdBonds.length;
 }
 
-// Microcanonical phase label. The Lindemann 0.2 crossing is the
-// solid-liquid marker (as in lj/analysis.py); the gyration radius flags
-// actual evaporation, which hot microclusters do instead of melting.
-function phaseOf(lind, rg) {
-  if (rg > 2.5) return "evaporating";
-  if (lind < 0.1) return "solid";
-  if (lind < 0.2) return "melting";
-  return "liquid";
+function bondFraction(pos) {
+  if (!mdBonds.length) return 0;
+  const equilibrium = Math.pow(2, 1 / 6) * LJ_SIGMA;
+  let strength = 0;
+  for (const [i, j] of mdBonds) {
+    const dx = pos[i][0] - pos[j][0];
+    const dy = pos[i][1] - pos[j][1];
+    const dz = pos[i][2] - pos[j][2];
+    const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    strength += Math.max(0, Math.min(1,
+      (1.5 * LJ_SIGMA - distance) / (1.5 * LJ_SIGMA - equilibrium)));
+  }
+  return strength / mdBonds.length;
+}
+
+function meanBondDistance(pos) {
+  let sum = 0;
+  for (const [i, j] of mdBonds) {
+    sum += Math.hypot(pos[i][0] - pos[j][0],
+                      pos[i][1] - pos[j][1],
+                      pos[i][2] - pos[j][2]);
+  }
+  return mdBonds.length ? sum / mdBonds.length : 0;
+}
+
+// Combine structural and thermodynamic indicators. A large gyration radius
+// alone is not evaporation: a liquid cluster can expand substantially while
+// remaining bound. Bond loss is the primary evaporation signal.
+function phaseOf(lind, rg, temperature, bonds) {
+  if (bonds < 0.25 || rg > 4.0) return "evaporating";
+  if (bonds < 0.70 || lind >= 0.10 || temperature >= 0.20) return "liquid";
+  if (lind >= 0.04 || temperature >= 0.10 || bonds < 0.90) return "melting";
+  return "solid";
+}
+
+function phaseHue(phase) {
+  if (phase === "melting") return 42;      // amber
+  if (phase === "liquid") return 8;        // red
+  if (phase === "evaporating") return 285; // violet
+  return 210;                              // blue
 }
 
 // Exact minimised starting geometry computed by the Python core when the
@@ -569,9 +541,14 @@ function mdInit() {
   const n = nAtoms;
   mdPos = mdInitialPositions(n);
   const [, pe0] = ljForces(mdPos);
-  mdE0 = parseFloat(mdStart.value);
-  mdE1 = parseFloat(mdTarget.value);
-  mdDtVal = parseFloat(mdDt.value);
+  // Always begin just above the minimized potential energy and heat to a
+  // size-scaled target high enough to cross the cluster's melting region.
+  mdE0 = pe0 + Math.max(1e-4 * LJ_EPS, 0.01 * LJ_EPS);
+  // This target is above the solid basin but below the fully dispersed
+  // regime, allowing the cluster to expand and melt rather than evaporate
+  // immediately.
+  mdE1 = pe0 + Math.max(8.0 * LJ_EPS, 0.55 * Math.abs(pe0));
+  mdDtVal = Math.min(parseFloat(mdDt.value) || 0.0005, 0.001);
   mdRampSteps = Math.max(500, parseFloat(mdRamp.value) || 20000);
   if (!(mdE0 > pe0) || !(mdE1 > pe0)) {
     mdStatus.textContent =
@@ -594,6 +571,7 @@ function mdInit() {
   mdDone = false;
   mdRampTarget = mdE0;
   mdRampF = 0;
+  mdExternalTarget = false;
   mdActive = true;
   mdSamples = [];
   initLindemann(mdPos);
@@ -605,22 +583,78 @@ function mdInit() {
 }
 
 // Simulation playback rate: the viewer's speed multiplier also drives the
-// live MD, so 4x plays 4x the physics per real second.
+// live MD. Use several integration steps per render so the cluster does not
+// appear frozen between 50 ms updates.
 function mdStepsPerFrame() {
-  return Math.max(1, Math.round(2 * speed));
+  return Math.max(1, Math.round(12 * parseFloat(mdSpeed.value || "4")));
+}
+
+function resolveClosePairs(pos, vel) {
+  const minR = LJ_CORE_R;
+  for (let i = 0; i < pos.length; i++) {
+    for (let j = i + 1; j < pos.length; j++) {
+      let dx = pos[j][0] - pos[i][0];
+      let dy = pos[j][1] - pos[i][1];
+      let dz = pos[j][2] - pos[i][2];
+      let r = Math.hypot(dx, dy, dz);
+      if (r >= minR) continue;
+      if (r < 1e-12) { dx = minR; dy = 0; dz = 0; r = minR; }
+      const nx = dx / r, ny = dy / r, nz = dz / r;
+      const correction = 0.5 * (minR - r);
+      pos[i][0] -= correction * nx; pos[i][1] -= correction * ny; pos[i][2] -= correction * nz;
+      pos[j][0] += correction * nx; pos[j][1] += correction * ny; pos[j][2] += correction * nz;
+      const closing = (vel[j][0] - vel[i][0]) * nx +
+                      (vel[j][1] - vel[i][1]) * ny +
+                      (vel[j][2] - vel[i][2]) * nz;
+      if (closing < 0) {
+        const impulse = -0.5 * closing;
+        vel[i][0] -= impulse * nx; vel[i][1] -= impulse * ny; vel[i][2] -= impulse * nz;
+        vel[j][0] += impulse * nx; vel[j][1] += impulse * ny; vel[j][2] += impulse * nz;
+      }
+    }
+  }
+}
+
+function stableVerletStep(pos, vel, forces, dt) {
+  let minR2 = Infinity;
+  for (let i = 0; i < pos.length; i++) {
+    for (let j = i + 1; j < pos.length; j++) {
+      const dx = pos[i][0] - pos[j][0];
+      const dy = pos[i][1] - pos[j][1];
+      const dz = pos[i][2] - pos[j][2];
+      minR2 = Math.min(minR2, dx * dx + dy * dy + dz * dz);
+    }
+  }
+  const r = Math.sqrt(minR2);
+  const substeps = r < LJ_CORE_R ? 32
+    : r < 0.95 * LJ_SIGMA ? 8
+    : r < 1.05 * LJ_SIGMA ? 2
+    : 1;
+  const subdt = dt / substeps;
+  for (let k = 0; k < substeps; k++) {
+    [forces] = verletStep(pos, vel, forces, subdt);
+    resolveClosePairs(pos, vel);
+    [forces] = ljForces(pos);
+  }
+  const [, pe] = ljForces(pos);
+  return [forces, pe];
 }
 
 // One animation tick: mdStepsPerFrame() Verlet steps plus rendering.
 function mdAdvance() {
   if (!mdRunning || !mdPos) return;
   const ndof = 3 * nAtoms - 3;
-  const confine = confineChk.checked;
+  const confine = confineEnabled;
   for (let s = 0; s < mdStepsPerFrame(); s++) {
     // annealing ramp: the total-energy setpoint moves linearly E0 -> E1
     const f = Math.min(1, mdStepCount / mdRampSteps);
-    mdRampTarget = mdE0 + (mdE1 - mdE0) * f;
-    mdRampF = f;
-    [mdForces, mdPe] = verletStep(mdPos, mdVel, mdForces, mdDtVal);
+    if (mdExternalTarget) {
+      mdRampF = 1;
+    } else {
+      mdRampTarget = mdE0 + (mdE1 - mdE0) * f;
+      mdRampF = f;
+    }
+    [mdForces, mdPe] = stableVerletStep(mdPos, mdVel, mdForces, mdDtVal);
     mdStepCount++;
     if (mdStepCount % MD_TAU === 0) removeComVelocity(mdVel);
     // real-time heating: a Berendsen weak-coupling thermostat chases the
@@ -629,14 +663,27 @@ function mdAdvance() {
     // the atoms keep moving — no discontinuous velocity kicks. During
     // melting PE rises as the setpoint does, so T* stalls on the caloric
     // plateau just like in the Python scans.
-    if (f < 1) {
+    if (mdExternalTarget || mdStepCount < mdRampSteps + MD_HOLD_STEPS) {
       const keNow = kineticEnergy(mdVel);
       const tNow = temperatureOf(keNow, nAtoms);
       const tTarget = Math.max(0, 2.0 * (mdRampTarget - mdPe) / ndof);
       if (tTarget > 0 && tNow > 1e-12) {
-        const ratio = Math.min(tTarget / tNow, 50.0);
-        const fac = Math.sqrt(1.0 + (mdDtVal / MD_TAU_T) * (ratio - 1.0));
+        const ratio = Math.min(tTarget / tNow, 4.0);
+        const rawFac = Math.sqrt(1.0 + (mdDtVal / MD_TAU_T) * (ratio - 1.0));
+        const fac = Math.max(0.995, Math.min(1.005, rawFac));
         for (const v of mdVel) { v[0] *= fac; v[1] *= fac; v[2] *= fac; }
+      }
+      // Add a small Langevin-like fluctuation while heating. This keeps the
+      // motion visibly noisy instead of producing perfectly smooth crystal
+      // oscillations, while the thermostat above controls the mean energy.
+      if (tTarget > 0 && mdRampF < 1) {
+        const gamma = 0.04;
+        const noise = Math.min(0.01, Math.sqrt(2 * gamma * tTarget * mdDtVal));
+        for (const v of mdVel) {
+          v[0] += noise * randn();
+          v[1] += noise * randn();
+          v[2] += noise * randn();
+        }
       }
     }
     // "confine" toggle: a specular reflective wall at R_CONF. During a live
@@ -657,7 +704,9 @@ function mdAdvance() {
         }
       }
     }
-    // f >= 1: free NVE at the final energy — the thermostat switches off
+    // Keep weak coupling through the visible melt window. A hot cluster has
+    // close encounters; switching immediately to NVE lets one unresolved
+    // collision dominate the browser animation.
     if (mdStepCount % MD_TAU === 0) {
       const keS = kineticEnergy(mdVel);
       mdSamples.push({ e: keS + mdPe, t: temperatureOf(keS, nAtoms) });
@@ -674,20 +723,29 @@ function mdAdvance() {
 
   // update the live observables and re-render the scene from mdPos
   const ke = kineticEnergy(mdVel);
+  if (!Number.isFinite(ke) || !Number.isFinite(mdPe) || Math.abs(ke + mdPe) > 1e6) {
+    mdRunning = false;
+    mdStatus.textContent = "stopped: unstable close encounter; press reset and run again";
+    return;
+  }
   const T = temperatureOf(ke, nAtoms);
   const lind = lindemannIndex();
   let srg = 0;
   for (const p of mdPos) srg += p[0]*p[0] + p[1]*p[1] + p[2]*p[2];
   const rg = Math.sqrt(srg / nAtoms);
+  const bonds = bondFraction(mdPos);
+  const meanR = meanBondDistance(mdPos);
+  const phase = phaseOf(lind, rg, T, bonds);
   const localPE = perAtomPE(mdPos);
+  const phaseH = phaseHue(phase);
   mdLiveHue = localPE.map(u => {
     const t = Math.max(0, Math.min(1, (u - peLo) / Math.max(peHi - peLo, 1e-9)));
-    return { h: 215 - 215 * t, s: 72 };
+    return { h: phaseH - 18 * t, s: 78 };
   });
   mdFlat = [];
   for (const p of mdPos) mdFlat.push(p[0], p[1], p[2]);
   const rampF = mdRampF;
-  const tTarget = rampF < 1
+  const tTarget = (mdExternalTarget || rampF < 1)
     ? Math.max(0, 2.0 * (mdRampTarget - mdPe) / ndof) : null;
   mdLive = {
     time: mdStepCount * mdDtVal,
@@ -696,7 +754,9 @@ function mdAdvance() {
     tTarget: tTarget,
     lind: lind,
     rg: rg,
-    phase: phaseOf(lind, rg),
+    meanR: meanR,
+    phase: phase,
+    bonds: bonds,
     step: mdStepCount,
     rampF: rampF,
   };
@@ -707,7 +767,6 @@ function mdAdvance() {
     " · δL=" + lind.toFixed(3) +
     " · " + mdLive.phase +
     (rampF < 1 ? " · ramp " + Math.round(100 * rampF) + "%" : " · NVE");
-  if (hasFramePE) energySel = ke + mdPe;   // pink E*-line shows the actual energy
   render(performance.now());
 }
 
@@ -722,9 +781,6 @@ mdRun.addEventListener("click", () => {
   if (mdDone || !mdPos || mdStepCount === 0) {
     if (!mdInit()) return;
   }
-  setPlaying(false);
-  thermalActive = false;
-  rampChk.checked = false; rampActive = false;
   mdRunning = true;
   mdRun.textContent = "Stop";
   mdRun.classList.add("running");
@@ -733,9 +789,10 @@ mdRun.addEventListener("click", () => {
 
 mdClear.addEventListener("click", () => {
   mdRunning = false;
-  mdRun.textContent = "Run";
+  mdRun.textContent = "Heat from minimum";
   mdRun.classList.remove("running");
   mdActive = false;
+  mdExternalTarget = false;
   mdDone = false;
   mdLive = null;
   mdLiveHue = null;
@@ -757,16 +814,17 @@ const hasE   = Array.isArray(DATA.energies) && DATA.energies.length === frames.l
 const hasT   = Array.isArray(DATA.temperatures) && DATA.temperatures.length === frames.length;
 const chartCanvas = document.getElementById("chartCanvas");
 const chartCtx = chartCanvas.getContext("2d");
+const potentialCanvas = document.getElementById("potentialCanvas");
+const potentialCtx = potentialCanvas.getContext("2d");
 
 let maxExtent = 0;
 for (const f of frames)
   for (const c of f) maxExtent = Math.max(maxExtent, Math.abs(c));
 
-let frame = 0, playing = false, speed = parseFloat(speedSel.value);
+let frame = 0, speed = 4;
 let rotX = -24, rotY = 38, zoom = 1;
 let lastT = 0;
 
-// energy axis: per-frame potential energy and the PE range across frames
 const hasFramePE = hasPE;
 let framePE = null, peMinAll = 0, peMaxAll = 0;
 if (hasFramePE) {
@@ -774,10 +832,6 @@ if (hasFramePE) {
   peMinAll = Math.min(...framePE);
   peMaxAll = Math.max(...framePE);
 }
-// energy slider spans from just below the coldest frame PE (deep solid)
-// up to well past the hottest frame PE (fully evaporated)
-const E_FLOOR = hasFramePE ? peMinAll - 1.0 : -50.0;
-const E_CEIL  = hasFramePE ? peMaxAll + 8.0 : -10.0;
 let energySel = null;   // null = follow the trajectory's actual E(t)
 
 // Thermal takeover: when the energy slider is active, we drive a live
@@ -793,6 +847,33 @@ let thermalTarget = 0;     // target temperature from the slider
 let thermalActive = false; // whether energy mode is driving the view
 let rampActive = false;    // heat-ramp mode: auto-sweep the energy slider
 let rampStart = 0;         // timestamp when the ramp started (ms)
+
+function startPhysicalEnergyControl(target) {
+  const requested = Number(target);
+  if (!Number.isFinite(requested)) return false;
+  const current = mdActive && mdLive
+    ? mdLive.E
+    : (hasE ? DATA.energies[frame] : framePE[frame]);
+  const minimum = mdActive ? mdPe + 1e-6 : framePE[frame] + 1e-6;
+  const safeTarget = Math.max(requested, minimum);
+
+  if (!mdActive) {
+    mdRamp.value = "2000";
+    if (!mdInit()) return false;
+  } else {
+    mdE0 = mdLive ? mdLive.E : current;
+    mdE1 = safeTarget;
+    mdRampTarget = safeTarget;
+    mdRampF = 1;
+  }
+  mdExternalTarget = true;
+  mdE1 = safeTarget;
+  mdRampTarget = safeTarget;
+  mdRunning = true;
+  mdRun.textContent = "Stop";
+  mdRun.classList.add("running");
+  return true;
+}
 
 function impliedTempAt(eSel, i) {
   if (!hasFramePE || eSel === null) return null;
@@ -810,100 +891,7 @@ function energyColor(i) {
 // The implied temperature is T* = 2(E* - PE)/(3N-3); the cluster then heats
 // up in real time (thermalT -> thermalTarget), bonds break, and the melting
 // process unfolds live on top of the trajectory frame.
-if (hasFramePE) {
-  energySlider.min = E_FLOOR.toFixed(2);
-  energySlider.max = E_CEIL.toFixed(2);
-  energySlider.step = "0.01";
-  // default: the trajectory's own total energy at frame 0
-  energySel = DATA.energies && hasE ? DATA.energies[0] : framePE[0];
-  energySlider.value = energySel.toFixed(2);
-  const setTarget = () => {
-    energySel = parseFloat(energySlider.value);
-    thermalTarget = impliedTempAt(energySel, frame) ?? 0;
-    thermalActive = true;
-  };
-  energySlider.addEventListener("input", () => {
-    setTarget();
-    colorSel.value = "energy";
-    render(performance.now());
-  });
-  colorSel.addEventListener("change", () => {
-    if (colorSel.value !== "energy") { thermalActive = false; energySel = null; thermalT = 0; }
-    render(performance.now());
-  });
-  setTarget();
-  updateEnergyReadout();
-
-  // heat ramp: auto-sweep the energy slider from E_FLOOR to E_CEIL over
-  // rampDuration seconds, driving the full melting crossover hands-free.
-  const RAMP_STATES = { IDLE: 0, UP: 1, HOLD_HOT: 2, COOL: 3, HOLD_COLD: 4 };
-  let rampState = RAMP_STATES.IDLE;
-  let rampStateStart = 0;
-  let rampHoldMs = 4000;      // pause at the hot and cold ends
-  const rampTargetE = () => parseFloat(energySlider.value);
-
-  function setRampTarget(e) {
-    energySel = e;
-    energySlider.value = e.toFixed(2);
-    thermalTarget = impliedTempAt(e, frame) ?? 0;
-    thermalActive = true;
-  }
-
-  function advanceRamp(now) {
-    if (rampState === RAMP_STATES.IDLE) {
-      rampState = RAMP_STATES.UP;
-      rampStateStart = now;
-    }
-    const dur = Math.max(2, parseFloat(rampDuration.value) || 20) * 1000;
-    const hold = rampHoldMs;
-
-    if (rampState === RAMP_STATES.UP) {
-      const f = Math.min(1, (now - rampStateStart) / dur);
-      setRampTarget(E_FLOOR + (E_CEIL - E_FLOOR) * f);
-      if (f >= 1) { rampState = RAMP_STATES.HOLD_HOT; rampStateStart = now; }
-    } else if (rampState === RAMP_STATES.HOLD_HOT) {
-      if (now - rampStateStart > hold) {
-        if (rampLoop.checked) { rampState = RAMP_STATES.COOL; rampStateStart = now; }
-        else { rampState = RAMP_STATES.IDLE; rampChk.checked = false; thermalActive = false; thermalT = 0; }
-      }
-    } else if (rampState === RAMP_STATES.COOL) {
-      const f = Math.min(1, (now - rampStateStart) / dur);
-      setRampTarget(E_CEIL - (E_CEIL - E_FLOOR) * f);
-      if (f >= 1) { rampState = RAMP_STATES.HOLD_COLD; rampStateStart = now; }
-    } else if (rampState === RAMP_STATES.HOLD_COLD) {
-      if (now - rampStateStart > hold) { rampState = RAMP_STATES.UP; rampStateStart = now; }
-    }
-    render(now);
-  }
-
-  rampChk.addEventListener("change", () => {
-    rampActive = rampChk.checked;
-    colorSel.value = "energy";
-    if (rampActive) { advanceRamp(performance.now()); }
-    else { rampState = RAMP_STATES.IDLE; thermalActive = false; thermalT = 0; render(performance.now()); }
-  });
-  rampLoop.addEventListener("change", () => { rampStateStart = performance.now(); });
-  rampDuration.addEventListener("input", () => { rampStateStart = performance.now(); });
-}
-function updateEnergyReadout() {
-  // live MD: show the actual state chasing the annealing setpoint
-  if (mdActive && mdLive) {
-    const tArrow = mdLive.tTarget !== null ? " → " + mdLive.tTarget.toFixed(3) : " · NVE";
-    energyReadout.innerHTML =
-      "set E* = " + mdLive.target.toFixed(2) + " (ramp " +
-        Math.round(100 * mdLive.rampF) + "%)" +
-      "<br>E* = " + mdLive.E.toFixed(2) +
-      "<br>T* = " + mdLive.T.toFixed(3) + tArrow +
-      "<br>&delta;<sub>L</sub> = " + mdLive.lind.toFixed(3);
-    return;
-  }
-  if (!hasFramePE || energySel === null) { energyReadout.textContent = ""; return; }
-  const tHere = impliedTempAt(energySel, frame);
-  const tStr = tHere === null ? "—" : tHere.toFixed(3);
-  const dE = energySel - framePE[frame];
-  energyReadout.innerHTML = "E* = " + energySel.toFixed(2) + "<br>T* = " + tStr +
-    "<br>&Delta;E = " + (dE >= 0 ? "+" : "") + dE.toFixed(2);
-}
+function updateEnergyReadout() {}
 
 // light at a finite position in view space (px, y down positive). Kept
 // close to the cluster so the light direction varies from atom to atom —
@@ -969,8 +957,7 @@ if (hasPE) {
 function baseHueSat(i) {
   // live MD colouring wins: per-atom local potential energy, same scale
   if (mdActive && mdLiveHue) return mdLiveHue[i];
-  if (colorSel.value === "energy") return energyColor(i);
-  if (colorSel.value === "uniform" || !hueTable) return { h: 210, s: 65 };
+  if (!hueTable) return { h: 210, s: 65 };
   return hueTable[frame][i];
 }
 
@@ -1028,14 +1015,14 @@ for (let i = 0; i < nAtoms; i++) {
 function renderAtoms(tNow) {
   const f = activePositions();
   const r = 0.185 * scale;
-  const inEnergy = !mdActive && colorSel.value === "energy" && thermalActive;
+  const inEnergy = false;
   // smooth thermal expansion: cluster grows continuously as T rises
   const meltF = inEnergy ? Math.max(0, Math.min(1, (thermalT - T_MELT) / (T_VAPOR - T_MELT))) : 0;
   const expand = 1 + meltF * 0.45;   // up to 45% linear expansion at vaporisation
   for (let i = 0; i < nAtoms; i++) {
     let px = f[3*i] * expand, py = f[3*i+1] * expand, pz = f[3*i+2] * expand;
     // spherical confinement: reflect atoms that cross the boundary wall
-    if (confineChk.checked) {
+    if (confineEnabled) {
       const d2 = px*px + py*py + pz*pz;
       if (d2 > R_CONF2) {
         const d = Math.sqrt(d2);
@@ -1101,10 +1088,10 @@ function renderBonds(tNow) {
   // fake thermal-takeover melting (energy-slider mode); during a live MD
   // run the physical distances and the 1.5-sigma bond cutoff decide on
   // their own, so no artificial expansion or staged snapping is applied
-  const inEnergy = !mdActive && colorSel.value === "energy" && thermalActive;
+  const inEnergy = false;
   const meltF = inEnergy ? Math.max(0, Math.min(1, (thermalT - T_MELT) / (T_VAPOR - T_MELT))) : 0;
   const expand = 1 + meltF * 0.45;
-  const confine = confineChk.checked;
+  const confine = confineEnabled;
   const pairs = [];
   for (let i = 0; i < nAtoms; i++)
     for (let j = i + 1; j < nAtoms; j++) {
@@ -1127,7 +1114,7 @@ function renderBonds(tNow) {
   const zRange = 2 * maxExtent * scale;
   for (let k = 0; k < bondEls.length; k++) {
     const el = bondEls[k];
-    if (k >= pairs.length || !bondsChk.checked) { el.style.display = "none"; continue; }
+    if (k >= pairs.length || !bondsEnabled) { el.style.display = "none"; continue; }
     const [i, j, dist] = pairs[k];
     let xi = f[3*i]*expand, yi = f[3*i+1]*expand, zi = f[3*i+2]*expand;
     let xj = f[3*j]*expand, yj = f[3*j+1]*expand, zj = f[3*j+2]*expand;
@@ -1149,7 +1136,11 @@ function renderBonds(tNow) {
     const q = quatFromTo([1, 0, 0], [dx / lenPx, dy / lenPx, 0]);
     el.style.display = "";
     el.style.width = lenPx + "px";
-    el.style.opacity = ((0.22 + 0.6 * depthT) * (1 - strain * 0.45)).toFixed(2);
+    const thermalWeakening = mdActive && mdLive
+      ? Math.max(0, Math.min(0.65, (mdLive.T - T_MELT) / (T_VAPOR - T_MELT) * 0.65))
+      : 0;
+    el.style.opacity = ((0.22 + 0.6 * depthT) *
+      (1 - strain * 0.45) * (1 - thermalWeakening)).toFixed(2);
     if (strain > 0.62) {
       el.style.background = "rgba(255, " + Math.round(180 - 120 * strain) +
         ", 80, " + (0.4 + 0.6 * (strain - 0.62) / 0.38).toFixed(2) + ")";
@@ -1165,7 +1156,7 @@ function renderBonds(tNow) {
 
 // ---------------------------------------------------------------- floor + shadow
 function renderFloor(tNow) {
-  if (!floorChk.checked) {
+  if (!floorEnabled) {
     floor.style.display = "none"; shadow.style.display = "none"; pool.style.display = "none";
     return;
   }
@@ -1179,7 +1170,7 @@ function renderFloor(tNow) {
   // soft grounding shadow + light pool: screen-space ellipses at the floor
   // line, tracking the cluster centroid; fade out as the view goes top-down
   const f = activePositions();
-  const inEnergy = !mdActive && colorSel.value === "energy" && thermalActive;
+  const inEnergy = false;
   const meltF = inEnergy ? Math.max(0, Math.min(1, (thermalT - T_MELT) / (T_VAPOR - T_MELT))) : 0;
   const expand = 1 + meltF * 0.45;
   let cx = 0, rx = 0;
@@ -1227,6 +1218,82 @@ function renderChart() {
       if (s.e > eHi) eHi = s.e;
       if (s.t < tLo) tLo = s.t;
       if (s.t > tHi) tHi = s.t;
+    }
+
+    function pairPotential(r) {
+      if (r <= 0 || r >= LJ_RC) return 0;
+      const q = LJ_SIGMA / r;
+      return 4 * LJ_EPS * (q ** 12 - q ** 6) - U_SHIFT;
+    }
+
+    function simulatedPotentialPoints() {
+      const points = [];
+      const stride = Math.max(1, Math.floor(frames.length / 80));
+      const add = flat => {
+        for (let i = 0; i < nAtoms; i++) {
+          for (let j = i + 1; j < nAtoms; j++) {
+            const dx = flat[3 * i] - flat[3 * j];
+            const dy = flat[3 * i + 1] - flat[3 * j + 1];
+            const dz = flat[3 * i + 2] - flat[3 * j + 2];
+            const r = Math.hypot(dx, dy, dz);
+            if (r > 0.85 * LJ_SIGMA && r < LJ_RC) {
+              points.push([r / LJ_SIGMA, pairPotential(r) / LJ_EPS]);
+            }
+          }
+        }
+      };
+      for (let i = 0; i < frames.length; i += stride) add(frames[i]);
+      if (mdActive && mdFlat) add(mdFlat);
+      return points;
+    }
+
+    function renderPotentialChart() {
+      const W = potentialCanvas.width, H = potentialCanvas.height;
+      potentialCtx.clearRect(0, 0, W, H);
+      const padL = 38, padR = 10, padT = 18, padB = 22;
+      const plotW = W - padL - padR, plotH = H - padT - padB;
+      const rMin = 0.85, rMax = LJ_RC / LJ_SIGMA;
+      const points = simulatedPotentialPoints();
+      const values = points.map(p => p[1]).filter(Number.isFinite).sort((a, b) => a - b);
+      const p95 = values.length ? values[Math.floor(0.95 * (values.length - 1))] : 1;
+      const yMin = Math.min(-1.2, values.length ? values[0] : -1.2);
+      const yMax = Math.max(1.0, Math.min(8.0, p95 * 1.15));
+      const x = r => padL + (r - rMin) / (rMax - rMin) * plotW;
+      const y = u => padT + plotH - (u - yMin) / (yMax - yMin) * plotH;
+
+      potentialCtx.strokeStyle = "#30363d";
+      potentialCtx.strokeRect(padL, padT, plotW, plotH);
+      potentialCtx.font = "9px system-ui";
+      potentialCtx.fillStyle = "#8b949e";
+      potentialCtx.textAlign = "center";
+      potentialCtx.fillText("r / sigma", padL + plotW / 2, H - 5);
+      potentialCtx.textAlign = "right";
+      potentialCtx.fillText(yMax.toFixed(1), padL - 4, padT + 8);
+      potentialCtx.fillText(yMin.toFixed(1), padL - 4, padT + plotH);
+
+      potentialCtx.strokeStyle = "#f778ba";
+      potentialCtx.lineWidth = 1.7;
+      potentialCtx.beginPath();
+      for (let i = 0; i < 240; i++) {
+        const r = rMin + (rMax - rMin) * i / 239;
+        const px = x(r), py = y(pairPotential(r * LJ_SIGMA) / LJ_EPS);
+        if (i === 0) potentialCtx.moveTo(px, py); else potentialCtx.lineTo(px, py);
+      }
+      potentialCtx.stroke();
+
+      potentialCtx.fillStyle = "rgba(88,166,255,0.55)";
+      for (const [r, u] of points) {
+        if (u >= yMin && u <= yMax) {
+          potentialCtx.beginPath();
+          potentialCtx.arc(x(r), y(u), 1.5, 0, 2 * Math.PI);
+          potentialCtx.fill();
+        }
+      }
+      potentialCtx.textAlign = "left";
+      potentialCtx.fillStyle = "#f778ba";
+      potentialCtx.fillText("theory", padL + 5, padT + 10);
+      potentialCtx.fillStyle = "#58a6ff";
+      potentialCtx.fillText("simulation", padL + 48, padT + 10);
     }
   }
   if (hasE) { const m = (eHi - eLo) * 0.08 || 1; eLo -= m; eHi += m; }
@@ -1341,18 +1408,78 @@ function renderChart() {
   }
 
   // animated temperature marker on the chart's T axis (blue)
-  if (colorSel.value === "energy" && thermalActive && hasT) {
-    const ty = padT + plotH - ((thermalT - tLo) / (tHi - tLo)) * plotH;
-    chartCtx.strokeStyle = "#58a6ff";
-    chartCtx.lineWidth = 2;
-    chartCtx.beginPath();
-    chartCtx.moveTo(padL, ty);
-    chartCtx.lineTo(padL + plotW, ty);
-    chartCtx.stroke();
-    chartCtx.fillStyle = "#58a6ff";
-    chartCtx.textAlign = "left";
-    chartCtx.fillText("T*=" + thermalT.toFixed(2), padL + plotW + 4, ty - 3);
+}
+
+function pairPotential(r) {
+  if (r <= 0 || r >= LJ_RC) return 0;
+  const q = LJ_SIGMA / r;
+  return 4 * LJ_EPS * (q ** 12 - q ** 6) - U_SHIFT;
+}
+
+function simulatedPotentialPoints() {
+  const points = [];
+  const stride = Math.max(1, Math.floor(frames.length / 80));
+  const add = flat => {
+    for (let i = 0; i < nAtoms; i++) {
+      for (let j = i + 1; j < nAtoms; j++) {
+        const dx = flat[3 * i] - flat[3 * j];
+        const dy = flat[3 * i + 1] - flat[3 * j + 1];
+        const dz = flat[3 * i + 2] - flat[3 * j + 2];
+        const r = Math.hypot(dx, dy, dz);
+        if (r > 0.85 * LJ_SIGMA && r < LJ_RC)
+          points.push([r / LJ_SIGMA, pairPotential(r) / LJ_EPS]);
+      }
+    }
+  };
+  for (let i = 0; i < frames.length; i += stride) add(frames[i]);
+  if (mdActive && mdFlat) add(mdFlat);
+  return points;
+}
+
+function renderPotentialChart() {
+  const W = potentialCanvas.width, H = potentialCanvas.height;
+  potentialCtx.clearRect(0, 0, W, H);
+  const padL = 38, padR = 10, padT = 18, padB = 22;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const rMin = 0.85, rMax = LJ_RC / LJ_SIGMA;
+  const points = simulatedPotentialPoints();
+  const values = points.map(p => p[1]).filter(Number.isFinite).sort((a, b) => a - b);
+  const p95 = values.length ? values[Math.floor(0.95 * (values.length - 1))] : 1;
+  const yMin = Math.min(-1.2, values.length ? values[0] : -1.2);
+  const yMax = Math.max(1.0, Math.min(8.0, p95 * 1.15));
+  const x = r => padL + (r - rMin) / (rMax - rMin) * plotW;
+  const y = u => padT + plotH - (u - yMin) / (yMax - yMin) * plotH;
+  potentialCtx.strokeStyle = "#30363d";
+  potentialCtx.strokeRect(padL, padT, plotW, plotH);
+  potentialCtx.font = "9px system-ui";
+  potentialCtx.fillStyle = "#8b949e";
+  potentialCtx.textAlign = "center";
+  potentialCtx.fillText("r / sigma", padL + plotW / 2, H - 5);
+  potentialCtx.textAlign = "right";
+  potentialCtx.fillText(yMax.toFixed(1), padL - 4, padT + 8);
+  potentialCtx.fillText(yMin.toFixed(1), padL - 4, padT + plotH);
+  potentialCtx.strokeStyle = "#f778ba";
+  potentialCtx.lineWidth = 1.7;
+  potentialCtx.beginPath();
+  for (let i = 0; i < 240; i++) {
+    const r = rMin + (rMax - rMin) * i / 239;
+    const px = x(r), py = y(pairPotential(r * LJ_SIGMA) / LJ_EPS);
+    if (i === 0) potentialCtx.moveTo(px, py); else potentialCtx.lineTo(px, py);
   }
+  potentialCtx.stroke();
+  potentialCtx.fillStyle = "rgba(88,166,255,0.55)";
+  for (const [r, u] of points) {
+    if (u >= yMin && u <= yMax) {
+      potentialCtx.beginPath();
+      potentialCtx.arc(x(r), y(u), 1.5, 0, 2 * Math.PI);
+      potentialCtx.fill();
+    }
+  }
+  potentialCtx.textAlign = "left";
+  potentialCtx.fillStyle = "#f778ba";
+  potentialCtx.fillText("theory", padL + 5, padT + 10);
+  potentialCtx.fillStyle = "#58a6ff";
+  potentialCtx.fillText("simulation", padL + 48, padT + 10);
 }
 
 // ---------------------------------------------------------------- HUD
@@ -1364,28 +1491,23 @@ function renderHUD() {
       "&nbsp;&nbsp;T = <b>" + mdLive.T.toFixed(3) + "</b> &epsilon;/k<sub>B</sub>" +
       "&nbsp;&nbsp;E* = <b>" + mdLive.E.toFixed(2) + "</b>" +
       "&nbsp;&nbsp;&delta;<sub>L</sub> = <b>" + mdLive.lind.toFixed(3) + "</b>" +
+      "&nbsp;&nbsp;&lang;r<sub>bond</sub>&rang; = <b>" + mdLive.meanR.toFixed(2) + "</b> &sigma;" +
+      "&nbsp;&nbsp;bonds = <b>" + Math.round(100 * mdLive.bonds) + "%</b>" +
       "&nbsp;(" + mdLive.phase + ")" +
       "&nbsp;&nbsp;step <b>" + mdLive.step + "</b>";
-    tlabel.textContent = "live MD · step " + mdLive.step;
     return;
   }
   const t = DATA.times ? DATA.times[frame] : frame;
   const T = DATA.temperatures ? DATA.temperatures[frame] : null;
-  // in energy mode, show the animated temperature the cluster is approaching
-  const tEff = (colorSel.value === "energy" && thermalActive)
-    ? thermalT : T;
   hud.innerHTML =
     "t = <b>" + (typeof t === "number" ? t.toFixed(2) : t) + "</b> &tau;" +
-    (tEff === null ? "" : "&nbsp;&nbsp;T = <b>" + tEff.toFixed(3) + "</b> &epsilon;/k<sub>B</sub>") +
-    (colorSel.value === "energy"
-      ? "&nbsp;&nbsp;E* = <b>" + energySel.toFixed(2) + "</b>" : "") +
+    (T === null ? "" : "&nbsp;&nbsp;T = <b>" + T.toFixed(3) + "</b> &epsilon;/k<sub>B</sub>") +
     "&nbsp;&nbsp;frame <b>" + frame + " / " + (frames.length - 1) + "</b>";
-  tlabel.textContent = "t = " + (typeof t === "number" ? t.toFixed(2) : t) + " tau";
 }
 
 // ---------------------------------------------------------------- boundary
 function renderBoundary() {
-  const on = confineChk.checked;
+  const on = confineEnabled;
   boundaryEl.style.display = on ? "" : "none";
   if (!on) return;
   const R = R_CONF * scale;
@@ -1421,8 +1543,8 @@ function render(tNow) {
   renderBoundary();
   renderHUD();
   renderChart();
+  renderPotentialChart();
   updateEnergyReadout();
-  scrub.value = frame;
 }
 
 function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
@@ -1435,51 +1557,17 @@ function tick(now) {
     rotY = INTRO_FROM.rotY + (INTRO_TO.rotY - INTRO_FROM.rotY) * e;
     render(now);
   } else {
-    // heat ramp mode: energy sweeps automatically, temperature follows
-    if (rampActive) {
-      advanceRamp(now);
-    }
-    // thermal takeover: always advance temperature toward target in energy mode
-    else if (colorSel.value === "energy" && thermalActive) {
-      const dt = Math.min((now - lastT) / 1000, 0.1);
-      const rate = 0.06;  // slow, continuous heating (temperature units per second)
-      if (thermalT < thermalTarget) thermalT = Math.min(thermalTarget, thermalT + rate * dt);
-      else if (thermalT > thermalTarget) thermalT = Math.max(thermalTarget, thermalT - rate * dt);
-      render(now);
-    } else if (playing) {
-      if (spinChk.checked) rotY += 0.35 * speed;
-      const dt = Math.min((now - lastT) / 1000, 0.1);
-      frame += dt * 30 * speed;             // ~30 frames per tau at 1x
-      if (frame >= frames.length - 1) { frame = frames.length - 1; setPlaying(false); }
-      frame = Math.floor(frame);
-      render(now);
-    }
+    if (mdRunning) render(now);
   }
   lastT = now;
   requestAnimationFrame(tick);
 }
 
-function setPlaying(p) {
-  playing = p;
-  playBtn.textContent = p ? "Pause" : "Play";
-}
-
 // ---------------------------------------------------------------- interaction
-playBtn.addEventListener("click", () => {
-  if (mdRunning) { mdRun.click(); return; }   // pause the live MD first
-  if (!playing && frame >= frames.length - 1) frame = 0;   // replay at the end
-  setPlaying(!playing);
-});
-scrub.addEventListener("input", () => { frame = parseInt(scrub.value, 10); render(performance.now()); });
-speedSel.addEventListener("change", () => { speed = parseFloat(speedSel.value); });
-bondsChk.addEventListener("change", () => renderBonds(performance.now()));
-floorChk.addEventListener("change", () => renderFloor(performance.now()));
-confineChk.addEventListener("change", () => render(performance.now()));
-colorSel.addEventListener("change", () => renderAtoms(performance.now()));
-resetBtn.addEventListener("click", () => { rotX = INTRO_TO.rotX; rotY = INTRO_TO.rotY; zoom = 1; render(performance.now()); });
 
 let dragging = false, lastX = 0, lastY = 0;
 viewport.addEventListener("pointerdown", e => {
+  if (e.target.closest("#mdPanel")) return;
   dragging = true; lastX = e.clientX; lastY = e.clientY;
   introStart = -1e18;                        // cancel the intro tumble
   viewport.classList.add("grabbing");
@@ -1502,23 +1590,12 @@ viewport.addEventListener("wheel", e => {
   render(performance.now());
 }, { passive: false });
 
-window.addEventListener("keydown", e => {
-  if (e.code === "Space") { e.preventDefault(); playBtn.click(); }
-  else if (e.code === "ArrowRight") { frame = Math.min(frames.length - 1, frame + 1); render(performance.now()); }
-  else if (e.code === "ArrowLeft")  { frame = Math.max(0, frame - 1); render(performance.now()); }
-});
-
 window.addEventListener("resize", () => render(performance.now()));
 
 // ---------------------------------------------------------------- boot
 document.getElementById("meta").textContent =
   (DATA.meta && DATA.meta.line ? DATA.meta.line + " · " : "") +
   nAtoms + " atoms · " + frames.length + " frames";
-// the MD panel's start energy defaults to this run's own total energy
-if (DATA.meta && typeof DATA.meta.energy === "number") {
-  mdStart.value = DATA.meta.energy.toFixed(2);
-}
-scrub.max = frames.length - 1;
 render(performance.now());
 requestAnimationFrame(t => { lastT = t; requestAnimationFrame(tick); });
 </script>
@@ -1547,7 +1624,6 @@ def write_viewer(out_path: str, payload: dict, title: str = "LJ cluster") -> str
         fh.write(html)
     return out_path
 
-
 def write_trajectory_outputs(result, outdir: str, title: str = "LJ cluster") -> tuple[str, str]:
     """Write trajectory.json + the HTML viewer for a RunResult."""
     os.makedirs(outdir, exist_ok=True)
@@ -1556,9 +1632,7 @@ def write_trajectory_outputs(result, outdir: str, title: str = "LJ cluster") -> 
     from .physics import per_atom_energy
     from . import cluster
 
-    kind = "icosahedral" if config.num_particles == 13 else "bcc"
-    pe_per_atom = (
-        [per_atom_energy(frame, config.cutoff, config.sigma, config.epsilon).tolist()
+    pe_per_atom = (        [per_atom_energy(frame, config.cutoff, config.sigma, config.epsilon).tolist()
          for frame in result.frames]
         if result.frames
         else []
@@ -1571,11 +1645,13 @@ def write_trajectory_outputs(result, outdir: str, title: str = "LJ cluster") -> 
             "sigma": config.sigma,
             "epsilon": config.epsilon,
             "energy": config.total_energy,
-            # exact minimised starting geometry (Mackay icosahedron / BCC) so
-            # the viewer's live-MD run starts from the same configuration as
-            # the Python trajectories
+            # same minimised starting geometry as the Python trajectories
+            # (built with the config's cluster_kind and relaxation flag)
             "positions": cluster.build_cluster(
-                config.num_particles, kind=kind, sigma=config.sigma
+                config.num_particles,
+                kind=config.cluster_kind,
+                sigma=config.sigma,
+                relax=config.relax_geometry,
             )
             .reshape(-1)
             .tolist(),

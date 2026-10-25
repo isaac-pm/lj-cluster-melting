@@ -144,8 +144,14 @@ if [[ -n $RANKS ]]; then
 elif [[ -n $NODES ]]; then
     NTASKS=$((NODES * CORES_PER_NODE))
 else
-    NODES=$(( (RUNS + 1 + CORES_PER_NODE - 1) / CORES_PER_NODE ))   # +1 master
-    NTASKS=$((NODES * CORES_PER_NODE))
+    # single mode is ONE trajectory: extra ranks would be idle (workers exit
+    # immediately), so book the master core only unless ranks were forced
+    if [[ $MODE == single ]]; then
+        NTASKS=1
+    else
+        NODES=$(( (RUNS + 1 + CORES_PER_NODE - 1) / CORES_PER_NODE ))   # +1 master
+        NTASKS=$((NODES * CORES_PER_NODE))
+    fi
 fi
 (( NTASKS >= 1 )) || die "need at least one rank"
 

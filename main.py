@@ -16,6 +16,12 @@ Energy scan (one process per (energy, replica); scales with mpiexec):
         --replicas 3 --steps 100000
 
     mpiexec -n 8 python main.py --mode scan --energies ... --replicas 3
+
+Predefined cluster configurations (sizes 2-7, 13, 38, 55, 147, 309, 561):
+
+    python main.py --list-clusters                  # table of presets
+    python main.py --mode scan --num-particles 55   # geometry auto-selected
+    python main.py --mode single --num-particles 7 --kind pentagonal_bipyramid
 """
 
 from __future__ import annotations
@@ -27,6 +33,7 @@ import time
 
 import numpy as np
 
+from lj import cluster
 from lj.config import SimulationConfig
 from lj.mpi_scan import run_scan, run_single
 
@@ -36,6 +43,8 @@ from lj.mpi_scan import run_scan, run_single
 # Default resolution is 0.01 sigma_E across the full solid->liquid->vapour range.
 E_MIN, E_MAX, E_STEP = -43.0, -24.0, 0.01
 DEFAULT_ENERGIES = np.round(np.arange(E_MIN, E_MAX + E_STEP / 2, E_STEP), 2).tolist()
+# coarser default grid for other cluster sizes (0.01 over ~1.5N span is overkill)
+OTHER_N_STEP = 0.5
 
 
 def parse_args(argv=None) -> argparse.Namespace:
@@ -45,7 +54,7 @@ def parse_args(argv=None) -> argparse.Namespace:
     parser.add_argument(
         "--mode",
         choices=["single", "scan"],
-        default="scan",
+        default="single",
         help="single: one trajectory + HTML viewer; scan: (energy x replica) table",
     )
     parser.add_argument(
@@ -74,7 +83,24 @@ def parse_args(argv=None) -> argparse.Namespace:
         "--num-particles",
         type=int,
         default=13,
-        help="cluster size N (13 -> Mackay icosahedron; other N use a BCC cluster)",
+        help="cluster size N; a preset geometry is chosen automatically for "
+        "N = 2..7, 13, 38, 55, 147, 309, 561 (see --list-clusters), other N "
+        "use a relaxed BCC cluster",
+    )
+    parser.add_argument(
+        "--kind", default="auto",
+        help="geometry family: auto (default), icosahedral, "
+        "truncated_octahedral, bcc, or a preset name from --list-clusters",
+    )
+    parser.add_argument(
+        "--relax", action=argparse.BooleanOptionalAction, default=True,
+        help="FIRE-relax the starting geometry to its nearest local "
+        "LJ minimum (default: --relax); --no-relax keeps the idealised "
+        "preset coordinates",
+    )
+    parser.add_argument(
+        "--list-clusters", action="store_true",
+        help="print the predefined cluster configurations and exit",
     )
     parser.add_argument("--sample-every", type=int, default=200)
     parser.add_argument("--cutoff", type=float, default=2.5)
@@ -111,6 +137,8 @@ def build_config(args: argparse.Namespace) -> SimulationConfig:
         thermostat=None if args.thermostat == "none" else args.thermostat,
         target_temperature=args.target_temperature,
         tau_t=args.tau_t,
+        cluster_kind=args.kind,
+        relax_geometry=args.relax,
     )
 
 
@@ -118,7 +146,8 @@ def expand_energies(args: argparse.Namespace) -> list[float]:
     """Resolve the CLI energy spec into the grid passed to run_scan.
 
     Priority: explicit --energies list > --start/--end/--de grid >
-    preset default sweep (E_MIN..E_MAX at E_STEP).
+    preset window (N=13 keeps the flagship full-resolution sweep;
+    other sizes get a suggested window at 0.5-resolution).
     """
     if args.energies:
         return args.energies
@@ -137,7 +166,30 @@ def expand_energies(args: argparse.Namespace) -> list[float]:
         return np.round(span, 8).tolist()
     if args.de is not None:
         raise SystemExit("--de needs --start-energy and --end-energy")
-    return DEFAULT_ENERGIES
+    if args.num_particles == 13 and args.kind in ("auto", "icosahedral"):
+        return DEFAULT_ENERGIES
+    # suggested window for a preset/other-size cluster: just above the
+    # ground state, up to the vicinity of where melting/evaporation starts
+    e_low, e_high = cluster.suggested_energy_window(
+        args.num_particles, cutoff=args.cutoff, sigma=args.sigma, epsilon=args.epsilon
+    )
+    return np.round(np.arange(e_low, e_high + OTHER_N_STEP / 2, OTHER_N_STEP), 8).tolist()
+
+
+def print_clusters() -> None:
+    presets = cluster.list_clusters()
+    print(f"{len(presets)} predefined cluster configurations "
+          f"(all relaxed to their nearest LJ local minimum by default):\n")
+    print(f"  {'key':24s} {'N':>4s}  description")
+    for key, preset in presets:
+        print(f"  {key:24s} {preset.num_particles:4d}  {preset.description}")
+    print(
+        "\nUse with --num-particles (geometry chosen automatically) or\n"
+        "--kind <key>. Reference energies are for the full unshifted LJ\n"
+        "potential in reduced units; runs use the potential-shifted\n"
+        "cutoff (--cutoff, default 2.5 sigma), so reported E* is slightly\n"
+        "higher than the reference."
+    )
 
 
 def _mpi_rank() -> int:
@@ -159,6 +211,9 @@ def n_ranks() -> int:
 
 def main(argv=None) -> int:
     args = parse_args(argv)
+    if args.list_clusters:
+        print_clusters()
+        return 0
     args.energies = expand_energies(args)
     config = build_config(args)
     rank = _mpi_rank()
@@ -181,16 +236,16 @@ def main(argv=None) -> int:
         print(f"  mean T*   = {result.averages['temperature_mean']:.4f}")
         print(f"  Lindemann = {result.averages['lindemann_mean']:.4f}")
         print(f"  |dE/E|    = {result.averages['drift_rel']:.2e}")
-        print("wrote outputs/trajectory.json and outputs/cluster.html")
+        print("wrote outputs/trajectory.json, outputs/cluster.html, and outputs/potential.png")
         return 0
 
     # scan mode: master distributes (energy, replica) items over MPI ranks
-    kind = "icosahedral" if args.num_particles == 13 else "bcc"
+
     if rank == 0:              # banner only once: identical per-rank banners
         print(                 # make the scan log look like duplicate work
             f"scan [rank 0 of {n_ranks()}]: {len(args.energies)} energies "
             f"x {args.replicas} replicas = {len(args.energies) * args.replicas} "
-            f"runs, {args.steps} steps each (N={args.num_particles}, {kind})"
+            f"runs, {args.steps} steps each ({cluster.describe_size(args.num_particles, args.kind)})"
         )
     results = run_scan(config, args.energies, args.replicas, args.outdir)
     if results is None:

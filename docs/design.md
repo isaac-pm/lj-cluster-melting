@@ -6,7 +6,7 @@
 main.py                 CLI; same entry point on laptop and HPC
 lj/
   config.py             SimulationConfig (frozen dataclass, LJ reduced units)
-  cluster.py            geometry builders, velocities, COM handling
+  cluster.py            cluster presets, FIRE relaxation, velocities, COM
   physics.py            LJ forces; ForceEvaluator interface (serial / MPI)
   integrator.py         velocity Verlet (kick-drift-kick), Berendsen
   simulation.py         trajectory driver, sampling, Lindemann accumulator
@@ -46,9 +46,21 @@ Without `mpi4py`, or with `mpiexec -n 1`, the same code runs serially.
   energies/temperatures by ε while trajectories remain numerically
   identical to the reduced-unit run of the scaled system.
   Energies in ε, lengths in σ, time in τ = σ√(m/ε).
-- **Initial geometry**: Mackay icosahedron (LJ-13 global minimum,
-  E* ≈ −44.3268). The 12 vertices are scaled so the 30 surface edges sit
-  at the pair minimum 2^(1/6); the centre atom relaxes slightly inside.
+- **Initial geometry**: twelve predefined LJ cluster configurations
+  (`lj/cluster.py`, `--list-clusters`): the global minima for
+  N = 2–7 and 13, the LJ-38 truncated octahedron, and multi-shell
+  Mackay icosahedra (N = 55, 147, 309, 561), cross-validated against
+  the Cambridge Cluster Database reference energies to ~10⁻⁴.
+  `--num-particles N` picks a preset automatically (BCC lattice
+  fallback for other sizes); `--kind` selects one explicitly and
+  rejects size mismatches. Idealised constructions are ready-relaxed
+  with a deterministic FIRE minimiser (equivalent results under
+  `--sigma` rescaling; idempotent at stationary points; ~µs for
+  N = 13 to ~4 s for N = 561), so every run starts at its nearest
+  local minimum. In scan mode without explicit energies, each N gets
+  a suggested window: a full 0.01-resolved sweep for N = 13
+  (E* −43.0 → −23.5), a 0.5-spaced grid elsewhere starting just
+  above the relaxed potential energy.
 - **Integrator**: velocity Verlet in kick–drift–kick form,
 
       v(t+dt/2) = v(t) + dt/2·F(t)/m

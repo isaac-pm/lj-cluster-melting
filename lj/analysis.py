@@ -142,3 +142,40 @@ def write_caloric_plot(table: dict[str, np.ndarray], path: str) -> None:
     fig.tight_layout()
     fig.savefig(path, dpi=120)
     plt.close(fig)
+
+
+def write_lj_potential_plot(
+    path: str,
+    cutoff: float = 2.5,
+    sigma: float = 1.0,
+    epsilon: float = 1.0,
+) -> None:
+    """Write the pair Lennard-Jones potential used by the simulation."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    r_min = sigma * 2.0 ** (1.0 / 6.0)
+    r = np.linspace(0.8 * sigma, cutoff * sigma, 800)
+    q = sigma / r
+    q_cut = sigma / (cutoff * sigma)
+    shift = 4.0 * epsilon * (q_cut**12 - q_cut**6)
+    potential = 4.0 * epsilon * (q**12 - q**6) - shift
+    potential[-1] = 0.0
+
+    fig, ax = plt.subplots(figsize=(6.5, 4.2))
+    ax.plot(r / sigma, potential / epsilon, color="#f778ba", lw=2)
+    ax.axhline(0.0, color="#8b949e", lw=0.8)
+    ax.axvline(r_min / sigma, color="#58a6ff", ls="--", lw=1,
+               label=r"$r_\mathrm{min}=2^{1/6}\sigma$")
+    ax.axvline(cutoff, color="#3fb950", ls="--", lw=1,
+               label=rf"$r_c={cutoff:g}\sigma$")
+    ax.set_xlabel(r"separation $r/\sigma$")
+    ax.set_ylabel(r"potential $U(r)/\varepsilon$")
+    ax.set_title("shifted Lennard-Jones pair potential")
+    ax.set_xlim(r[0] / sigma, cutoff)
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(path, dpi=140)
+    plt.close(fig)

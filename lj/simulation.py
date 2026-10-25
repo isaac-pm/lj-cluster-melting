@@ -82,7 +82,7 @@ def run_trajectory(
     force_eval: ForceEvaluator | None = None,
     progress: "callable[[int, int], None] | None" = None,
 ) -> RunResult:
-    """Run one (NVE or NVT) trajectory from the Mackay minimum.
+    """Run one (NVE or NVT) trajectory from a preset cluster geometry.
 
     Initial velocities are Maxwell-Boltzmann at a temperature estimated
     from the target energy, then rescaled so E_total = E* exactly and the
@@ -93,8 +93,12 @@ def run_trajectory(
         force_eval = SerialForces(config.cutoff, config.sigma, config.epsilon)
 
     rng = np.random.default_rng(config.seed)
-    kind = "icosahedral" if config.num_particles == 13 else "bcc"
-    positions = cluster.build_cluster(config.num_particles, kind=kind, sigma=config.sigma)
+    positions = cluster.build_cluster(
+        config.num_particles,
+        kind=config.cluster_kind,
+        sigma=config.sigma,
+        relax=config.relax_geometry,
+    )
     _, pe0 = force_eval.compute(positions)
 
     ndof = 3 * config.num_particles - 3

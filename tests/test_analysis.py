@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from lj.analysis import caloric_table, melting_summary
+from lj.analysis import caloric_table, melting_summary, write_lj_potential_plot
 
 mpi4py = pytest.importorskip("mpi4py")
 from mpi4py import MPI  # noqa: E402
@@ -116,6 +116,8 @@ def test_viewer_payload_roundtrip():
     assert "/*__DATA__*/ null" not in html
     assert "LJ_MIN" not in html
     assert "chartCanvas" in html
+    assert "energySlider" not in html
+    assert "rampChk" not in html
     # payload is valid JSON inside the html
     start = html.index("const DATA = ") + len("const DATA = ")
     end = html.index(";\n", start)
@@ -123,3 +125,9 @@ def test_viewer_payload_roundtrip():
     assert parsed["frames"] == payload["frames"]
     assert parsed["energies"] == payload["energies"]
     assert parsed["temperatures"] == payload["temperatures"]
+
+
+def test_lj_potential_plot_is_written(tmp_path):
+    out = tmp_path / "potential.png"
+    write_lj_potential_plot(str(out))
+    assert out.stat().st_size > 0

@@ -18,7 +18,12 @@ import os
 from collections import deque
 from dataclasses import asdict, dataclass, replace
 
-from .analysis import caloric_table, melting_summary, write_caloric_plot
+from .analysis import (
+    caloric_table,
+    melting_summary,
+    write_caloric_plot,
+    write_lj_potential_plot,
+)
 from .config import SimulationConfig
 from .physics import SerialForces
 from .simulation import run_trajectory
@@ -317,4 +322,10 @@ def run_single(
         from .visualize import write_trajectory_outputs
 
         write_trajectory_outputs(result, outdir)
+        write_lj_potential_plot(
+            os.path.join(outdir, "potential.png"),
+            cutoff=config.cutoff,
+            sigma=config.sigma,
+            epsilon=config.epsilon,
+        )
     return result

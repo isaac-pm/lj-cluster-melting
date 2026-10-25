@@ -1,6 +1,6 @@
 # lj-cluster-melting
 
-Project 6 (Computational Methods, Université du Luxembourg): a molecular model of melting. We simulate a small Lennard-Jones cluster (N = 13, Mackay icosahedron) with velocity Verlet and follow the crossover from solid-like to liquid-like behaviour as the energy increases.
+Project 6 (Computational Methods, Université du Luxembourg): a molecular model of melting. We simulate small Lennard-Jones clusters (N = 2–7, 13, 38, 55, 147, 309, 561 — from the LJ dimer up to multi-shell Mackay icosahedra) with velocity Verlet and follow the crossover from solid-like to liquid-like behaviour as the energy increases. Every cluster starts from a predefined configuration (`--list-clusters`) relaxed to its nearest local minimum.
 
 ## Documents
 
@@ -40,8 +40,8 @@ python main.py --mode single       # one trajectory + HTML viewer
 ## Usage
 
 ```bash
-# Single run: trajectory.json + outputs/cluster.html (drag to rotate, space to play)
-python main.py --mode single --energies -36 --steps 50000
+# Single run (also the default): trajectory.json + cluster.html + potential.png
+python main.py --energies -36 --steps 50000
 
 # Melting scan: full 0.01-resolved sweep, merged caloric curve
 python main.py --mode scan --replicas 3
@@ -63,12 +63,53 @@ Outputs land in `outputs/`:
 
 | mode    | files                                                                                          |
 | ------- | ---------------------------------------------------------------------------------------------- |
-| single  | `trajectory.json`, `cluster.html` (self-contained CSS 3D viewer with a live in-browser velocity-Verlet MD panel that anneals the cluster from `E_0` to `E_1`, works from `file://`) |
+| single  | `trajectory.json`, `cluster.html`, `potential.png` (self-contained CSS 3D viewer with a live in-browser velocity-Verlet MD panel that anneals the cluster from `E_0` to `E_1`, works from `file://`) |
 | scan    | `merged.json`, `caloric.csv`, `caloric.png`, `summary.json`, `per_run/e*_r*.csv`               |
 
 `summary.json` reports the transition markers: the heat-capacity peak C = dE/dT and the Lindemann 0.1 crossing (finite-resolution estimates — see design notes).
 
 MPI is optional: without mpi4py installed, everything runs serially. With it, the same script parallelises under `mpiexec` — one process per (energy, replica), rank 0 merges. For large clusters, `lj.physics.AtomDecomposedForces` additionally splits the O(N²) force loop across ranks inside each worker.
+
+## Cluster presets
+
+Initial geometries come from `lj/cluster.py`; list them with:
+
+```bash
+python main.py --list-clusters
+```
+
+| key                   | N   | configuration                                            |
+| --------------------- | --- | -------------------------------------------------------- |
+| `dimer`               | 2   | LJ-2 global minimum, E* = −1                              |
+| `triangle`            | 3   | LJ-3 global minimum, E* = −3                              |
+| `tetrahedron`         | 4   | LJ-4 global minimum, E* = −6                              |
+| `triangular_bipyramid`| 5   | LJ-5 global minimum, E* = −9.1039                         |
+| `octahedron`          | 6   | LJ-6 global minimum, E* = −12.7121                        |
+| `pentagonal_bipyramid`| 7   | LJ-7 global minimum, E* = −16.5054                        |
+| `icosahedron`         | 13  | LJ-13 global minimum (Mackay icosahedron), E* = −44.3268  |
+| `truncated_octahedron`| 38  | LJ-38 global minimum (non-icosahedral exception)          |
+| `icosahedron55/147/309/561` | 55 / 147 / 309 / 561 | multi-shell Mackay icosahedra, 1–4 shells |
+
+E* values are reference energies of the full (unshifted) LJ potential in reduced units; runs use the potential-shifted cutoff at 2.5σ, so reported E* in the outputs is slightly higher.
+
+- `--num-particles N` picks a preset automatically where one exists (otherwise a relaxed BCC lattice fallback);
+- `--kind <key>` selects a preset explicitly and errors if the size does not match;
+- every preset is FIRE-relaxed to its nearest LJ local minimum before the run (`--no-relax` skips this);
+- in scan mode without explicit `--energies`, each N gets a suggested energy window around its relaxed minimum (a full 0.01-resolved sweep for N = 13, a coarser sweep elsewhere).
+
+```bash
+# LJ-55 Mackay icosahedron: suggested window, coarser scan
+python main.py --mode scan --num-particles 55
+
+# LJ-38 truncated octahedron over its suggested energy window
+python main.py --mode scan --num-particles 38
+
+# Skip the FIRE relaxation (start from the idealised geometry)
+python main.py --mode single --num-particles 13 --no-relax
+
+# Mixed preset: build 4 shells (N = 309), custom kind
+python main.py --mode single --num-particles 309 --kind icosahedron309 --energies -1900
+```
 
 ## Running on the ULHPC clusters (Aion and Iris)
 
